@@ -12,10 +12,7 @@ import {
   Plus, 
   Search, 
   MoreVertical,
-  Upload,
   DollarSign,
-  ArrowUpRight,
-  ArrowDownRight,
   X,
   Clock,
   CheckSquare,
@@ -26,9 +23,14 @@ import {
   CalendarDays,
   MapPin,
   Phone,
-  Video,
-  MessageSquare,
-  Trash2
+  Trash2,
+  Target,
+  ArrowRight,
+  BarChart3,
+  IceCream,
+  CircleSlash,
+  Handshake,
+  TrendingDown
 } from 'lucide-react';
 
 // --- Types ---
@@ -79,6 +81,18 @@ interface AgendaEvent {
   status: 'Pending' | 'Done';
 }
 
+type ProspectionStage = 'Prospectado' | 'Marcou Reunião' | 'Sem Interesse' | 'Congelado' | 'Fechamento';
+
+interface ProspectionLead {
+  id: string;
+  name: string;
+  company: string;
+  phone: string;
+  stage: ProspectionStage;
+  createdAt: string;
+  notes?: string;
+}
+
 // --- Mock Data ---
 
 const MOCK_CLIENTS: Client[] = [
@@ -108,6 +122,14 @@ const MOCK_EVENTS: AgendaEvent[] = [
   { id: '1', clientId: '1', title: 'Reunião de Alinhamento', type: 'Reunião', date: new Date().toISOString().split('T')[0], time: '14:00', description: 'Definir metas do próximo mês.', status: 'Pending' },
   { id: '2', clientId: '2', title: 'Visita Técnica', type: 'Visita', date: new Date(Date.now() + 86400000).toISOString().split('T')[0], time: '10:00', description: 'Fotografia do novo espaço para reels.', status: 'Pending' },
   { id: '3', clientId: '1', title: 'Follow-up Contrato', type: 'Follow-up', date: new Date(Date.now() + 172800000).toISOString().split('T')[0], time: '09:00', description: 'Verificar assinatura do aditivo.', status: 'Pending' },
+];
+
+const MOCK_PROSPECTION: ProspectionLead[] = [
+  { id: 'p1', name: 'Carlos Lima', company: 'Padaria Central', phone: '(11) 91111-0000', stage: 'Prospectado', createdAt: '2024-05-10' },
+  { id: 'p2', name: 'Juliana Dias', company: 'Moda Fashion', phone: '(11) 92222-0000', stage: 'Marcou Reunião', createdAt: '2024-05-11' },
+  { id: 'p3', name: 'Marcos Reus', company: 'Academia Fit', phone: '(11) 93333-0000', stage: 'Fechamento', createdAt: '2024-05-08' },
+  { id: 'p4', name: 'Ana Souza', company: 'Clínica Sorriso', phone: '(11) 94444-0000', stage: 'Congelado', createdAt: '2024-05-05' },
+  { id: 'p5', name: 'Bruno M.', company: 'Oficina Turbo', phone: '(11) 95555-0000', stage: 'Sem Interesse', createdAt: '2024-05-01' },
 ];
 
 // --- Utilities ---
@@ -142,6 +164,7 @@ const Badge: React.FC<{ children?: React.ReactNode; color: string }> = ({ childr
     orange: 'bg-orange-100 text-orange-800',
     red: 'bg-red-100 text-red-800',
     gray: 'bg-gray-100 text-gray-800',
+    indigo: 'bg-indigo-100 text-indigo-800',
   };
   return (
     <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${colors[color] || colors.gray}`}>
@@ -187,7 +210,7 @@ const SaoPauloClock = () => {
   );
 };
 
-// --- New Client Modal Component ---
+// --- Modals ---
 
 const NewClientModal = ({ 
   isOpen, 
@@ -224,7 +247,7 @@ const NewClientModal = ({
   };
 
   const handleSave = () => {
-    if(!formData.company || !formData.name) return; // Basic validation
+    if(!formData.company || !formData.name) return;
 
     const newClient: Client = {
       id: Math.random().toString(36).substr(2, 9),
@@ -238,7 +261,7 @@ const NewClientModal = ({
     };
 
     onSave(newClient);
-    setFormData({ company: '', name: '', email: '', phone: '', services: [] }); // Reset
+    setFormData({ company: '', name: '', email: '', phone: '', services: [] });
   };
 
   const availableServices: ServiceType[] = ['Tráfego', 'Google', 'Vídeo', 'Postagens'];
@@ -338,8 +361,6 @@ const NewClientModal = ({
   );
 };
 
-// --- New Event Modal Component ---
-
 const NewEventModal = ({
   isOpen,
   onClose,
@@ -384,7 +405,6 @@ const NewEventModal = ({
     };
 
     onSave(newEvent);
-    // Reset form but keep date
     setFormData({ ...formData, title: '', description: '', clientId: '' });
   };
 
@@ -486,8 +506,6 @@ const NewEventModal = ({
     </div>
   );
 };
-
-// --- Client Detail Modal Component ---
 
 const ClientDetailModal = ({ 
   client, 
@@ -698,7 +716,6 @@ const AgendaView = ({
     setEvents(events.filter(e => e.id !== id));
   };
 
-  // Sort events by date and time
   const sortedEvents = [...events].sort((a, b) => {
     return new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime();
   });
@@ -867,183 +884,280 @@ const AgendaView = ({
   );
 };
 
+const ProspectionView = ({
+  leads,
+  setLeads
+}: {
+  leads: ProspectionLead[];
+  setLeads: React.Dispatch<React.SetStateAction<ProspectionLead[]>>;
+}) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newLead, setNewLead] = useState({ name: '', company: '', phone: '', notes: '' });
+
+  const stages: ProspectionStage[] = ['Prospectado', 'Marcou Reunião', 'Congelado', 'Sem Interesse', 'Fechamento'];
+
+  const getStageColor = (stage: ProspectionStage) => {
+    switch (stage) {
+      case 'Prospectado': return 'border-blue-200 bg-blue-50/30';
+      case 'Marcou Reunião': return 'border-purple-200 bg-purple-50/30';
+      case 'Congelado': return 'border-amber-200 bg-amber-50/30';
+      case 'Sem Interesse': return 'border-red-200 bg-red-50/30';
+      case 'Fechamento': return 'border-emerald-200 bg-emerald-50/30';
+      default: return 'border-slate-200 bg-slate-50';
+    }
+  };
+
+  const getStageIcon = (stage: ProspectionStage) => {
+    switch (stage) {
+      case 'Prospectado': return <Target size={16} className="text-blue-600" />;
+      case 'Marcou Reunião': return <Users size={16} className="text-purple-600" />;
+      case 'Congelado': return <IceCream size={16} className="text-amber-600" />;
+      case 'Sem Interesse': return <CircleSlash size={16} className="text-red-600" />;
+      case 'Fechamento': return <Handshake size={16} className="text-emerald-600" />;
+    }
+  };
+
+  const moveLead = (id: string, newStage: ProspectionStage) => {
+    setLeads(leads.map(l => l.id === id ? { ...l, stage: newStage } : l));
+  };
+
+  const handleAddLead = () => {
+    if (!newLead.company || !newLead.name) return;
+    const lead: ProspectionLead = {
+      id: Math.random().toString(36).substr(2, 9),
+      ...newLead,
+      stage: 'Prospectado',
+      createdAt: new Date().toISOString().split('T')[0]
+    };
+    setLeads([...leads, lead]);
+    setNewLead({ name: '', company: '', phone: '', notes: '' });
+    setIsModalOpen(false);
+  };
+
+  const totalLeads = leads.length;
+  const totalMeetings = leads.filter(l => l.stage === 'Marcou Reunião' || l.stage === 'Fechamento').length;
+  const totalClosures = leads.filter(l => l.stage === 'Fechamento').length;
+
+  const leadsToMeetingRatio = totalMeetings > 0 ? (totalLeads / totalMeetings).toFixed(1) : '0';
+  const leadsToClosureRatio = totalClosures > 0 ? (totalLeads / totalClosures).toFixed(1) : '0';
+
+  return (
+    <div className="p-8 max-w-7xl mx-auto space-y-8">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-800">Controle de Prospecção</h1>
+          <p className="text-slate-500">Gestão do funil de vendas e métricas de conversão</p>
+        </div>
+        <button 
+          onClick={() => setIsModalOpen(true)}
+          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm"
+        >
+          <Plus size={18} /> Novo Lead
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-3 text-slate-400 mb-2">
+            <Target size={20} />
+            <span className="text-sm font-medium">Total Leads</span>
+          </div>
+          <p className="text-3xl font-bold text-slate-800">{totalLeads}</p>
+        </div>
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-3 text-slate-400 mb-2">
+            <Users size={20} />
+            <span className="text-sm font-medium">Reuniões</span>
+          </div>
+          <p className="text-3xl font-bold text-slate-800">{totalMeetings}</p>
+        </div>
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-3 text-slate-400 mb-2">
+            <Handshake size={20} />
+            <span className="text-sm font-medium">Fechamentos</span>
+          </div>
+          <p className="text-3xl font-bold text-emerald-600">{totalClosures}</p>
+        </div>
+        <div className="bg-indigo-900 p-6 rounded-2xl shadow-lg text-white">
+          <div className="flex items-center gap-3 text-indigo-300 mb-2">
+            <BarChart3 size={20} />
+            <span className="text-sm font-medium tracking-wide uppercase">Lei dos Números</span>
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs text-indigo-200">Para fechar 1 empresa, você precisa de:</p>
+            <p className="text-xl font-bold">{leadsToClosureRatio} Leads</p>
+            <p className="text-xs text-indigo-300 mt-2">Conversão Reunião: {leadsToMeetingRatio} leads</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col lg:flex-row gap-4 overflow-x-auto pb-4 h-[calc(100vh-400px)] min-h-[500px]">
+        {stages.map(stage => (
+          <div key={stage} className="flex-1 min-w-[280px] bg-slate-100/50 rounded-2xl border border-slate-200 flex flex-col overflow-hidden">
+            <div className={`p-4 border-b flex justify-between items-center ${getStageColor(stage)}`}>
+              <div className="flex items-center gap-2">
+                {getStageIcon(stage)}
+                <h3 className="text-sm font-bold text-slate-700">{stage}</h3>
+              </div>
+              <span className="bg-white/50 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                {leads.filter(l => l.stage === stage).length}
+              </span>
+            </div>
+            
+            <div className="flex-1 p-3 space-y-3 overflow-y-auto custom-scrollbar">
+              {leads.filter(l => l.stage === stage).map(lead => (
+                <div key={lead.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow group relative">
+                  <div className="flex justify-between items-start mb-2">
+                    <p className="font-bold text-slate-800 text-sm leading-tight">{lead.company}</p>
+                    <div className="opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
+                      <button onClick={() => setLeads(leads.filter(l => l.id !== lead.id))} className="text-slate-300 hover:text-red-500"><Trash2 size={14}/></button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500 mb-1 flex items-center gap-1"><Briefcase size={12}/> {lead.name}</p>
+                  <p className="text-xs text-slate-500 mb-3 flex items-center gap-1"><Phone size={12}/> {lead.phone}</p>
+                  
+                  <div className="flex flex-wrap gap-1 mt-auto">
+                    {stages.filter(s => s !== stage).map(nextStage => (
+                      <button 
+                        key={nextStage}
+                        onClick={() => moveLead(lead.id, nextStage)}
+                        className="text-[9px] font-bold px-1.5 py-0.5 bg-slate-50 text-slate-400 rounded border border-slate-100 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100 transition-colors"
+                      >
+                        {nextStage === 'Marcou Reunião' ? 'REUNIÃO' : nextStage.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="flex justify-between items-center p-6 border-b border-slate-100">
+              <h2 className="text-xl font-bold text-slate-800">Cadastrar Prospecção</h2>
+              <button onClick={() => setIsModalOpen(false)}><X size={24} className="text-slate-400" /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Empresa</label>
+                <input 
+                  type="text" 
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  value={newLead.company}
+                  onChange={e => setNewLead({...newLead, company: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Contato</label>
+                <input 
+                  type="text" 
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  value={newLead.name}
+                  onChange={e => setNewLead({...newLead, name: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Telefone / WhatsApp</label>
+                <input 
+                  type="text" 
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  value={newLead.phone}
+                  onChange={e => setNewLead({...newLead, phone: e.target.value})}
+                />
+              </div>
+            </div>
+            <div className="p-6 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
+              <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 rounded-lg">Cancelar</button>
+              <button onClick={handleAddLead} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Salvar Lead</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Dashboard = ({ 
   clients, 
   transactions, 
   demands,
   events,
+  leads,
   onToggleDemand
 }: { 
   clients: Client[], 
   transactions: Transaction[], 
   demands: Demand[],
   events: AgendaEvent[],
+  leads: ProspectionLead[],
   onToggleDemand: (id: string) => void
 }) => {
-  const receivables = transactions.filter(t => t.type === 'Receivable');
-  
-  const totalRevenue = receivables.filter(t => t.status === 'Paid').reduce((acc, t) => acc + t.amount, 0);
-  const projectedRevenue = receivables.filter(t => t.status === 'Pending').reduce((acc, t) => acc + t.amount, 0);
-  
-  const overdueTransactions = receivables.filter(t => t.status === 'Pending' && getDaysOverdue(t.dueDate) > 0);
-  const overdueAmount = overdueTransactions.reduce((acc, t) => acc + t.amount, 0);
-
-  // Filter next demands from global state
-  const upcomingDemands = demands
-    .filter(d => d.status === 'Pending')
-    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
-    .slice(0, 5);
-
-  // Filter upcoming events (Today/Tomorrow)
-  const today = new Date().toISOString().split('T')[0];
-  const upcomingEvents = events
-    .filter(e => e.date >= today && e.status === 'Pending')
-    .sort((a, b) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime())
-    .slice(0, 4);
+  const totalRevenue = transactions.filter(t => t.type === 'Receivable' && t.status === 'Paid').reduce((acc, t) => acc + t.amount, 0);
+  const totalClosures = leads.filter(l => l.stage === 'Fechamento').length;
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-800">Painel de Controle</h1>
-        <p className="text-slate-500">Visão geral da VM Marketing</p>
+    <div className="p-8 max-w-7xl mx-auto space-y-8">
+      <header>
+        <h1 className="text-3xl font-bold text-slate-800">Dashboard</h1>
+        <p className="text-slate-500">Gestão global da VM Marketing</p>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <div className="flex justify-between items-start mb-4">
-            <div className="p-2 bg-emerald-100 rounded-lg text-emerald-600"><DollarSign size={20} /></div>
-            <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">+12%</span>
-          </div>
-          <p className="text-slate-500 text-sm font-medium">Receita Realizada</p>
-          <h3 className="text-2xl font-bold text-slate-800">{formatCurrency(totalRevenue)}</h3>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+           <div className="p-2 bg-emerald-100 rounded-lg text-emerald-600 w-fit mb-4"><DollarSign size={20}/></div>
+           <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Faturamento Pago</p>
+           <h3 className="text-2xl font-bold text-slate-800">{formatCurrency(totalRevenue)}</h3>
         </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <div className="flex justify-between items-start mb-4">
-            <div className="p-2 bg-blue-100 rounded-lg text-blue-600"><TrendingUp size={20} /></div>
-          </div>
-          <p className="text-slate-500 text-sm font-medium">Previsão (A Receber)</p>
-          <h3 className="text-2xl font-bold text-slate-800">{formatCurrency(projectedRevenue)}</h3>
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+           <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600 w-fit mb-4"><Users size={20}/></div>
+           <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Clientes Ativos</p>
+           <h3 className="text-2xl font-bold text-slate-800">{clients.length}</h3>
         </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <div className="flex justify-between items-start mb-4">
-            <div className="p-2 bg-red-100 rounded-lg text-red-600"><AlertCircle size={20} /></div>
-            {overdueAmount > 0 && <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-1 rounded-full">Atenção</span>}
-          </div>
-          <p className="text-slate-500 text-sm font-medium">Inadimplência</p>
-          <h3 className="text-2xl font-bold text-red-600">{formatCurrency(overdueAmount)}</h3>
-          <p className="text-xs text-red-400 mt-1">{overdueTransactions.length} clientes em atraso</p>
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+           <div className="p-2 bg-blue-100 rounded-lg text-blue-600 w-fit mb-4"><Target size={20}/></div>
+           <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Leads em Funil</p>
+           <h3 className="text-2xl font-bold text-slate-800">{leads.length}</h3>
         </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <div className="flex justify-between items-start mb-4">
-            <div className="p-2 bg-purple-100 rounded-lg text-purple-600"><Users size={20} /></div>
-          </div>
-          <p className="text-slate-500 text-sm font-medium">Clientes Ativos</p>
-          <h3 className="text-2xl font-bold text-slate-800">{clients.length}</h3>
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+           <div className="p-2 bg-purple-100 rounded-lg text-purple-600 w-fit mb-4"><Handshake size={20}/></div>
+           <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Fechamentos</p>
+           <h3 className="text-2xl font-bold text-slate-800">{totalClosures}</h3>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-         {/* Left Col: Events & Receipts */}
-         <div className="lg:col-span-2 space-y-8">
-            {/* Upcoming Events Widget */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-                  <CalendarDays className="text-indigo-600" size={18}/> Próximos Compromissos
-                </h3>
-                <span className="text-xs text-slate-500">Hoje & Amanhã</span>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {upcomingEvents.length > 0 ? upcomingEvents.map(event => (
-                  <div key={event.id} className="flex gap-3 p-3 rounded-lg border border-slate-100 bg-slate-50/50 hover:border-indigo-200 transition-colors">
-                     <div className="flex flex-col items-center justify-center bg-white border border-slate-200 rounded-lg p-2 min-w-[50px]">
-                        <span className="text-xs font-bold text-slate-400">{event.date.split('-')[2]}</span>
-                        <span className="text-sm font-bold text-indigo-600">{event.time}</span>
-                     </div>
-                     <div>
-                        <p className="font-semibold text-sm text-slate-800 line-clamp-1">{event.title}</p>
-                        <p className="text-xs text-slate-500">{event.type}</p>
-                     </div>
-                  </div>
-                )) : (
-                  <div className="col-span-2 text-center py-4 text-slate-400 text-sm">
-                    Sem compromissos próximos.
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Receipts */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-              <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                <Calendar className="text-slate-400" size={18}/> Próximos Recebimentos
-              </h3>
-              <div className="space-y-4">
-                {receivables
-                  .filter(t => t.status === 'Pending')
-                  .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
-                  .slice(0, 3)
-                  .map(t => {
-                    const client = clients.find(c => c.id === t.clientId);
-                    return (
-                      <div key={t.id} className="flex items-center justify-between border-b border-slate-50 pb-3 last:border-0 last:pb-0">
-                        <div>
-                          <p className="font-medium text-slate-800">{client?.company || 'Cliente'}</p>
-                          <p className="text-xs text-slate-500">{t.description}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-semibold text-slate-800">{formatCurrency(t.amount)}</p>
-                          <p className="text-xs text-slate-500">{formatDate(t.dueDate)}</p>
-                        </div>
-                      </div>
-                    )
-                  })}
-                {receivables.filter(t => t.status === 'Pending').length === 0 && (
-                  <p className="text-slate-400 text-sm text-center py-4">Nenhum recebimento pendente.</p>
-                )}
-              </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2"><CalendarDays size={20} className="text-indigo-600"/> Agenda de Hoje</h3>
+            <div className="space-y-4">
+               {events.length > 0 ? events.map(e => (
+                 <div key={e.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <div>
+                       <p className="font-bold text-slate-800 text-sm">{e.title}</p>
+                       <p className="text-xs text-slate-500">{e.type} - {e.time}</p>
+                    </div>
+                    <Badge color="blue">{e.status}</Badge>
+                 </div>
+               )) : <p className="text-sm text-slate-400 text-center py-4">Sem eventos para hoje.</p>}
             </div>
          </div>
-
-         {/* Right Col: Deliveries */}
-         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 h-fit">
-           <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <CheckCircle2 className="text-slate-400" size={18}/> Entregas & Demandas
-          </h3>
-           <div className="space-y-3">
-             {upcomingDemands.length > 0 ? upcomingDemands.map(demand => {
-               const client = clients.find(c => c.id === demand.clientId);
-               const isOverdue = getDaysOverdue(demand.dueDate) > 0;
-               return (
-                 <div key={demand.id} className="flex items-center gap-3 p-3 rounded-lg border border-slate-100 hover:bg-slate-50 transition-colors">
-                    <button onClick={() => onToggleDemand(demand.id)} className="text-slate-300 hover:text-indigo-600">
-                      <Square size={18} />
-                    </button>
+         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2"><Briefcase size={20} className="text-emerald-600"/> Demandas Críticas</h3>
+            <div className="space-y-4">
+               {demands.length > 0 ? demands.map(d => (
+                 <div key={d.id} className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <button onClick={() => onToggleDemand(d.id)}><Square size={20} className="text-slate-300"/></button>
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-slate-800 line-clamp-1">{demand.title}</p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-1 rounded">{client?.company}</span>
-                        <span className="text-[10px] text-slate-400">{demand.service}</span>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className={`text-xs font-medium ${isOverdue ? 'text-red-600' : 'text-slate-500'}`}>
-                        {formatDate(demand.dueDate).substring(0, 5)}
-                      </p>
+                       <p className="font-bold text-slate-800 text-sm">{d.title}</p>
+                       <p className="text-xs text-slate-500">{d.service} - {formatDate(d.dueDate)}</p>
                     </div>
                  </div>
-               )
-             }) : (
-               <div className="text-center py-6 text-slate-400">
-                 <p className="text-sm">Tudo em dia!</p>
-               </div>
-             )}
-           </div>
-        </div>
+               )) : <p className="text-sm text-slate-400 text-center py-4">Nenhuma demanda crítica.</p>}
+            </div>
+         </div>
       </div>
     </div>
   );
@@ -1094,7 +1208,6 @@ const ClientsView = ({
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {clients.map(client => {
-            // Count pending demands for badge
             const pendingCount = demands.filter(d => d.clientId === client.id && d.status === 'Pending').length;
 
             return (
@@ -1234,7 +1347,6 @@ const FinanceView = ({
     .filter(t => t.type === (activeTab === 'receivable' ? 'Receivable' : 'Payable'))
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
-  // Forecasting Logic: Group by Date
   const forecast = useMemo(() => {
     const groups: Record<string, number> = {};
     filteredTransactions
@@ -1262,8 +1374,6 @@ const FinanceView = ({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Main List */}
         <div className="lg:col-span-2 space-y-6">
           <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg w-fit">
             <button 
@@ -1352,7 +1462,6 @@ const FinanceView = ({
           </div>
         </div>
 
-        {/* Forecast Sidebar */}
         <div className="space-y-6">
           <div className="bg-slate-800 rounded-xl shadow-lg p-6 text-white">
             <h3 className="text-lg font-semibold mb-2">Previsão de Entrada</h3>
@@ -1384,7 +1493,6 @@ const FinanceView = ({
         </div>
       </div>
 
-      {/* Add Transaction Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in">
@@ -1396,7 +1504,6 @@ const FinanceView = ({
             </div>
             
             <div className="p-6 space-y-4">
-              {/* Type Selection */}
               <div className="flex rounded-lg bg-slate-100 p-1">
                 <button
                   type="button"
@@ -1422,7 +1529,6 @@ const FinanceView = ({
                 </button>
               </div>
 
-              {/* Description */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Descrição</label>
                 <input
@@ -1434,7 +1540,6 @@ const FinanceView = ({
                 />
               </div>
 
-              {/* Amount */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Valor (R$)</label>
                 <input
@@ -1446,7 +1551,6 @@ const FinanceView = ({
                 />
               </div>
 
-              {/* Date */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Data de Vencimento</label>
                 <input
@@ -1457,7 +1561,6 @@ const FinanceView = ({
                 />
               </div>
 
-              {/* Client Select (Only for Receivables) */}
               {newTransaction.type === 'Receivable' && (
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Cliente (Opcional)</label>
@@ -1496,14 +1599,15 @@ const FinanceView = ({
   );
 };
 
-// --- Main Layout & App ---
+// --- App Component ---
 
 const App = () => {
-  const [view, setView] = useState<'dashboard' | 'clients' | 'finance' | 'agenda'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'clients' | 'finance' | 'agenda' | 'prospection'>('prospection');
   const [clients, setClients] = useState<Client[]>(MOCK_CLIENTS);
   const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
   const [demands, setDemands] = useState<Demand[]>(MOCK_DEMANDS);
   const [events, setEvents] = useState<AgendaEvent[]>(MOCK_EVENTS);
+  const [leads, setLeads] = useState<ProspectionLead[]>(MOCK_PROSPECTION);
 
   const toggleDemand = (id: string) => {
     setDemands(demands.map(d => d.id === id ? { ...d, status: d.status === 'Pending' ? 'Done' : 'Pending' } : d));
@@ -1511,13 +1615,10 @@ const App = () => {
 
   return (
     <div className="flex h-screen bg-[#f8fafc]">
-      {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-slate-200 flex flex-col">
         <div className="p-6">
           <div className="flex items-center gap-2 text-indigo-700 mb-2">
-            <div className="bg-indigo-600 text-white p-1.5 rounded-lg">
-              <TrendingUp size={20} />
-            </div>
+            <div className="bg-indigo-600 text-white p-1.5 rounded-lg"><TrendingUp size={20} /></div>
             <span className="text-xl font-bold tracking-tight">VM Marketing</span>
           </div>
           <p className="text-xs text-slate-400 uppercase tracking-widest pl-1">CRM Control</p>
@@ -1531,32 +1632,34 @@ const App = () => {
             onClick={() => setView('dashboard')}
             className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors ${view === 'dashboard' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
           >
-            <LayoutDashboard size={18} />
-            Visão Geral
+            <LayoutDashboard size={18} /> Visão Geral
+          </button>
+          <button 
+            onClick={() => setView('prospection')}
+            className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors ${view === 'prospection' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
+          >
+            <Target size={18} /> Prospecção
           </button>
           <button 
             onClick={() => setView('clients')}
             className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors ${view === 'clients' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
           >
-            <Users size={18} />
-            Clientes & Contratos
+            <Users size={18} /> Clientes
           </button>
           <button 
             onClick={() => setView('agenda')}
             className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors ${view === 'agenda' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
           >
-            <CalendarDays size={18} />
-            Agenda
+            <CalendarDays size={18} /> Agenda
           </button>
           <button 
             onClick={() => setView('finance')}
             className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors ${view === 'finance' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
           >
-            <Wallet size={18} />
-            Financeiro
+            <Wallet size={18} /> Financeiro
           </button>
         </nav>
-
+        
         <div className="p-4 border-t border-slate-100">
           <div className="flex items-center gap-3">
             <div className="h-8 w-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-500">
@@ -1570,39 +1673,12 @@ const App = () => {
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
-        {view === 'dashboard' && (
-          <Dashboard 
-            clients={clients} 
-            transactions={transactions} 
-            demands={demands} 
-            events={events}
-            onToggleDemand={toggleDemand}
-          />
-        )}
-        {view === 'clients' && (
-          <ClientsView 
-            clients={clients} 
-            setClients={setClients} 
-            demands={demands}
-            setDemands={setDemands}
-          />
-        )}
-        {view === 'agenda' && (
-          <AgendaView 
-            events={events}
-            setEvents={setEvents}
-            clients={clients}
-          />
-        )}
-        {view === 'finance' && (
-          <FinanceView 
-            clients={clients} 
-            transactions={transactions} 
-            setTransactions={setTransactions} 
-          />
-        )}
+        {view === 'dashboard' && <Dashboard clients={clients} transactions={transactions} demands={demands} events={events} leads={leads} onToggleDemand={toggleDemand}/>}
+        {view === 'prospection' && <ProspectionView leads={leads} setLeads={setLeads} />}
+        {view === 'clients' && <ClientsView clients={clients} setClients={setClients} demands={demands} setDemands={setDemands}/>}
+        {view === 'agenda' && <AgendaView events={events} setEvents={setEvents} clients={clients}/>}
+        {view === 'finance' && <FinanceView clients={clients} transactions={transactions} setTransactions={setTransactions}/>}
       </main>
     </div>
   );
