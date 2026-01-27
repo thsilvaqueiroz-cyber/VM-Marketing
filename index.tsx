@@ -871,11 +871,13 @@ const Dashboard = ({
   clients, 
   transactions, 
   demands,
+  events,
   onToggleDemand
 }: { 
   clients: Client[], 
   transactions: Transaction[], 
   demands: Demand[],
+  events: AgendaEvent[],
   onToggleDemand: (id: string) => void
 }) => {
   const receivables = transactions.filter(t => t.type === 'Receivable');
@@ -891,6 +893,13 @@ const Dashboard = ({
     .filter(d => d.status === 'Pending')
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
     .slice(0, 5);
+
+  // Filter upcoming events (Today/Tomorrow)
+  const today = new Date().toISOString().split('T')[0];
+  const upcomingEvents = events
+    .filter(e => e.date >= today && e.status === 'Pending')
+    .sort((a, b) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime())
+    .slice(0, 4);
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
@@ -936,40 +945,74 @@ const Dashboard = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-          <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <Calendar className="text-slate-400" size={18}/> Próximos Recebimentos
-          </h3>
-          <div className="space-y-4">
-            {receivables
-              .filter(t => t.status === 'Pending')
-              .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
-              .slice(0, 5)
-              .map(t => {
-                const client = clients.find(c => c.id === t.clientId);
-                return (
-                  <div key={t.id} className="flex items-center justify-between border-b border-slate-50 pb-3 last:border-0 last:pb-0">
-                    <div>
-                      <p className="font-medium text-slate-800">{client?.company || 'Cliente'}</p>
-                      <p className="text-xs text-slate-500">{t.description}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-slate-800">{formatCurrency(t.amount)}</p>
-                      <p className="text-xs text-slate-500">{formatDate(t.dueDate)}</p>
-                    </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+         {/* Left Col: Events & Receipts */}
+         <div className="lg:col-span-2 space-y-8">
+            {/* Upcoming Events Widget */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+                  <CalendarDays className="text-indigo-600" size={18}/> Próximos Compromissos
+                </h3>
+                <span className="text-xs text-slate-500">Hoje & Amanhã</span>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {upcomingEvents.length > 0 ? upcomingEvents.map(event => (
+                  <div key={event.id} className="flex gap-3 p-3 rounded-lg border border-slate-100 bg-slate-50/50 hover:border-indigo-200 transition-colors">
+                     <div className="flex flex-col items-center justify-center bg-white border border-slate-200 rounded-lg p-2 min-w-[50px]">
+                        <span className="text-xs font-bold text-slate-400">{event.date.split('-')[2]}</span>
+                        <span className="text-sm font-bold text-indigo-600">{event.time}</span>
+                     </div>
+                     <div>
+                        <p className="font-semibold text-sm text-slate-800 line-clamp-1">{event.title}</p>
+                        <p className="text-xs text-slate-500">{event.type}</p>
+                     </div>
                   </div>
-                )
-              })}
-            {receivables.filter(t => t.status === 'Pending').length === 0 && (
-              <p className="text-slate-400 text-sm text-center py-4">Nenhum recebimento pendente.</p>
-            )}
-          </div>
-        </div>
+                )) : (
+                  <div className="col-span-2 text-center py-4 text-slate-400 text-sm">
+                    Sem compromissos próximos.
+                  </div>
+                )}
+              </div>
+            </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            {/* Receipts */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+              <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                <Calendar className="text-slate-400" size={18}/> Próximos Recebimentos
+              </h3>
+              <div className="space-y-4">
+                {receivables
+                  .filter(t => t.status === 'Pending')
+                  .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+                  .slice(0, 3)
+                  .map(t => {
+                    const client = clients.find(c => c.id === t.clientId);
+                    return (
+                      <div key={t.id} className="flex items-center justify-between border-b border-slate-50 pb-3 last:border-0 last:pb-0">
+                        <div>
+                          <p className="font-medium text-slate-800">{client?.company || 'Cliente'}</p>
+                          <p className="text-xs text-slate-500">{t.description}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold text-slate-800">{formatCurrency(t.amount)}</p>
+                          <p className="text-xs text-slate-500">{formatDate(t.dueDate)}</p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                {receivables.filter(t => t.status === 'Pending').length === 0 && (
+                  <p className="text-slate-400 text-sm text-center py-4">Nenhum recebimento pendente.</p>
+                )}
+              </div>
+            </div>
+         </div>
+
+         {/* Right Col: Deliveries */}
+         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 h-fit">
            <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <CheckCircle2 className="text-slate-400" size={18}/> Entregas & Demandas Próximas
+            <CheckCircle2 className="text-slate-400" size={18}/> Entregas & Demandas
           </h3>
            <div className="space-y-3">
              {upcomingDemands.length > 0 ? upcomingDemands.map(demand => {
@@ -981,7 +1024,7 @@ const Dashboard = ({
                       <Square size={18} />
                     </button>
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-slate-800">{demand.title}</p>
+                      <p className="text-sm font-medium text-slate-800 line-clamp-1">{demand.title}</p>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-1 rounded">{client?.company}</span>
                         <span className="text-[10px] text-slate-400">{demand.service}</span>
@@ -989,14 +1032,14 @@ const Dashboard = ({
                     </div>
                     <div className="text-right">
                       <p className={`text-xs font-medium ${isOverdue ? 'text-red-600' : 'text-slate-500'}`}>
-                        {formatDate(demand.dueDate)}
+                        {formatDate(demand.dueDate).substring(0, 5)}
                       </p>
                     </div>
                  </div>
                )
              }) : (
                <div className="text-center py-6 text-slate-400">
-                 <p className="text-sm">Tudo em dia! Nenhuma demanda pendente.</p>
+                 <p className="text-sm">Tudo em dia!</p>
                </div>
              )}
            </div>
@@ -1534,6 +1577,7 @@ const App = () => {
             clients={clients} 
             transactions={transactions} 
             demands={demands} 
+            events={events}
             onToggleDemand={toggleDemand}
           />
         )}
