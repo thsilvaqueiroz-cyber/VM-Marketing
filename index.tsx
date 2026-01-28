@@ -38,7 +38,8 @@ import {
   Megaphone,
   StickyNote,
   Loader2,
-  Settings
+  Settings,
+  Menu
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO SUPABASE ---
@@ -1041,85 +1042,137 @@ const LeadDetailModal = ({
   );
 };
 
-// --- Views ---
-
-const Dashboard = ({
-  clients,
-  transactions,
-  demands,
+const Dashboard = ({ 
+  clients, 
+  transactions, 
+  demands, 
   events,
   leads,
   onToggleDemand
-}: {
-  clients: Client[];
-  transactions: Transaction[];
-  demands: Demand[];
-  events: AgendaEvent[];
-  leads: ProspectionLead[];
-  onToggleDemand: (id: string) => void;
+}: { 
+  clients: Client[], 
+  transactions: Transaction[], 
+  demands: Demand[], 
+  events: AgendaEvent[],
+  leads: ProspectionLead[],
+  onToggleDemand: (id: string) => void
 }) => {
   const activeClients = clients.filter(c => c.status === 'Active').length;
   const pendingDemands = demands.filter(d => d.status === 'Pending').length;
-  const todaysEvents = events.filter(e => {
-    const today = new Date().toISOString().split('T')[0];
-    return e.date === today && e.status === 'Pending';
-  }).length;
+  const leadsInPipe = leads.filter(l => l.stage !== 'Sem Interesse' && l.stage !== 'Congelado').length;
   
-  const recentDemands = [...demands]
+  const currentMonthRevenue = transactions
+    .filter(t => {
+      const d = new Date(t.dueDate);
+      const now = new Date();
+      return t.type === 'Receivable' && t.status === 'Paid' && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    })
+    .reduce((acc, t) => acc + t.amount, 0);
+
+  const upcomingEvents = [...events]
+    .filter(e => e.status === 'Pending')
+    .sort((a, b) => new Date(a.date + 'T' + a.time).getTime() - new Date(b.date + 'T' + b.time).getTime())
+    .slice(0, 5);
+  
+  const urgentDemands = [...demands]
     .filter(d => d.status === 'Pending')
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
     .slice(0, 5);
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8">
+    <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
       <div>
         <h1 className="text-3xl font-bold text-slate-800">Visão Geral</h1>
-        <p className="text-slate-500">Bem-vindo ao CRM da VM Marketing</p>
+        <p className="text-slate-500">Métricas principais e atividades recentes</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-3 text-slate-400 mb-2">
-            <Users size={20} />
-            <span className="text-sm font-medium">Clientes Ativos</span>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+          <div>
+            <p className="text-slate-500 text-sm font-medium">Clientes Ativos</p>
+            <p className="text-3xl font-bold text-slate-800 mt-1">{activeClients}</p>
           </div>
-          <p className="text-3xl font-bold text-slate-800">{activeClients}</p>
+          <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
+            <Users size={24} />
+          </div>
         </div>
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-           <div className="flex items-center gap-3 text-slate-400 mb-2">
-            <CheckCircle2 size={20} />
-            <span className="text-sm font-medium">Demandas Pendentes</span>
+
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+          <div>
+            <p className="text-slate-500 text-sm font-medium">Receita Mensal</p>
+            <p className="text-3xl font-bold text-slate-800 mt-1">{formatCurrency(currentMonthRevenue)}</p>
           </div>
-          <p className="text-3xl font-bold text-slate-800">{pendingDemands}</p>
+          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-lg">
+            <DollarSign size={24} />
+          </div>
         </div>
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-           <div className="flex items-center gap-3 text-slate-400 mb-2">
-            <Calendar size={20} />
-            <span className="text-sm font-medium">Agenda Hoje</span>
+
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+          <div>
+            <p className="text-slate-500 text-sm font-medium">Leads no Pipeline</p>
+            <p className="text-3xl font-bold text-slate-800 mt-1">{leadsInPipe}</p>
           </div>
-          <p className="text-3xl font-bold text-slate-800">{todaysEvents}</p>
+          <div className="p-3 bg-purple-50 text-purple-600 rounded-lg">
+            <Target size={24} />
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+          <div>
+            <p className="text-slate-500 text-sm font-medium">Demandas Pendentes</p>
+            <p className="text-3xl font-bold text-slate-800 mt-1">{pendingDemands}</p>
+          </div>
+          <div className="p-3 bg-orange-50 text-orange-600 rounded-lg">
+            <Briefcase size={24} />
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white rounded-xl border border-slate-200 p-6">
-          <h3 className="text-lg font-bold text-slate-800 mb-4">Demandas Urgentes</h3>
-          <div className="space-y-3">
-            {recentDemands.length > 0 ? recentDemands.map(demand => (
-               <div key={demand.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
-                  <div className="flex items-center gap-3">
-                    <button onClick={() => onToggleDemand(demand.id)} className="text-slate-400 hover:text-indigo-600">
-                       <Square size={18} />
-                    </button>
-                    <div>
-                      <p className="text-sm font-medium text-slate-800">{demand.title}</p>
-                      <p className="text-xs text-slate-500">{formatDate(demand.dueDate)}</p>
-                    </div>
-                  </div>
-                  <Badge color="blue">{demand.service}</Badge>
-               </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+            <h3 className="font-bold text-slate-800">Próximos Eventos</h3>
+            <Calendar size={18} className="text-slate-400" />
+          </div>
+          <div className="divide-y divide-slate-100">
+            {upcomingEvents.length > 0 ? upcomingEvents.map(event => (
+              <div key={event.id} className="p-4 hover:bg-slate-50 transition-colors">
+                <div className="flex justify-between items-start mb-1">
+                  <p className="font-medium text-slate-800 text-sm">{event.title}</p>
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{event.time}</span>
+                </div>
+                <p className="text-xs text-slate-500 mb-2">{formatDate(event.date)} • {event.type}</p>
+                {event.clientId && <Badge color="indigo">Cliente</Badge>}
+              </div>
             )) : (
-               <p className="text-slate-400 text-sm text-center py-4">Tudo em dia!</p>
+              <p className="p-6 text-center text-slate-400 text-sm">Sem eventos próximos.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+            <h3 className="font-bold text-slate-800">Demandas Urgentes</h3>
+            <CheckSquare size={18} className="text-slate-400" />
+          </div>
+          <div className="divide-y divide-slate-100">
+            {urgentDemands.length > 0 ? urgentDemands.map(demand => (
+              <div key={demand.id} className="p-4 flex items-center gap-4 hover:bg-slate-50 transition-colors">
+                 <button onClick={() => onToggleDemand(demand.id)} className="text-slate-400 hover:text-indigo-600">
+                    <Square size={20} />
+                 </button>
+                 <div className="flex-1">
+                    <p className="font-medium text-slate-800 text-sm">{demand.title}</p>
+                    <div className="flex gap-2 mt-1">
+                      <span className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-100">{demand.service}</span>
+                    </div>
+                 </div>
+                 <div className="text-right">
+                    <p className="text-xs font-medium text-red-600">{formatDate(demand.dueDate)}</p>
+                 </div>
+              </div>
+            )) : (
+              <p className="p-6 text-center text-slate-400 text-sm">Nenhuma demanda pendente.</p>
             )}
           </div>
         </div>
@@ -1128,48 +1181,199 @@ const Dashboard = ({
   );
 };
 
-const ClientsView = ({
-  clients,
-  setClients,
-  demands,
-  setDemands
-}: {
-  clients: Client[];
-  setClients: React.Dispatch<React.SetStateAction<Client[]>>;
-  demands: Demand[];
-  setDemands: React.Dispatch<React.SetStateAction<Demand[]>>;
+const ProspectionView = ({ 
+  leads, 
+  setLeads 
+}: { 
+  leads: ProspectionLead[], 
+  setLeads: React.Dispatch<React.SetStateAction<ProspectionLead[]>> 
 }) => {
-  const [isNewModalOpen, setIsNewModalOpen] = useState(false);
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedLead, setSelectedLead] = useState<ProspectionLead | null>(null);
+  const [newLead, setNewLead] = useState({ company: '', phone: '' });
 
-  const handleAddClient = (newClient: Client) => {
-    setClients([...clients, newClient]);
-    setIsNewModalOpen(false);
+  const stages: ProspectionStage[] = ['Prospectado', 'Marcou Reunião', 'Sem Interesse', 'Congelado', 'Fechamento'];
+
+  const handleAddLead = async () => {
+    if (!newLead.company) return;
+    const { data, error } = await supabase.from('prospection_leads').insert([{
+      company: newLead.company,
+      phone: newLead.phone,
+      stage: 'Prospectado',
+    }]).select();
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    if (data) {
+      setLeads([...leads, mapLead(data[0])]);
+      setNewLead({ company: '', phone: '' });
+      setIsModalOpen(false);
+    }
   };
 
-  const handleAddDemand = (newDemand: Demand) => {
-    setDemands([...demands, newDemand]);
+  const handleUpdateLead = (updated: ProspectionLead) => {
+    setLeads(leads.map(l => l.id === updated.id ? updated : l));
+  };
+
+  const moveStage = async (lead: ProspectionLead, newStage: ProspectionStage) => {
+    // Optimistic
+    setLeads(leads.map(l => l.id === lead.id ? { ...l, stage: newStage } : l));
+    // DB
+    await supabase.from('prospection_leads').update({ stage: newStage }).eq('id', lead.id);
+  };
+
+  return (
+    <div className="p-6 h-full flex flex-col overflow-hidden">
+      <div className="flex justify-between items-center mb-6 shrink-0">
+        <div>
+           <h1 className="text-2xl font-bold text-slate-800">Prospecção</h1>
+           <p className="text-slate-500 text-sm">Pipeline de vendas</p>
+        </div>
+        <button 
+          onClick={() => setIsModalOpen(true)}
+          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors shadow-sm"
+        >
+          <Plus size={16} /> Novo Lead
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-x-auto overflow-y-hidden pb-4">
+        <div className="flex gap-4 h-full min-w-[1000px]">
+          {stages.map(stage => {
+            const stageLeads = leads.filter(l => l.stage === stage);
+            return (
+              <div key={stage} className="flex-1 flex flex-col min-w-[280px] bg-slate-100/50 rounded-xl border border-slate-200/60">
+                <div className={`p-3 border-b border-slate-200 font-semibold text-xs uppercase tracking-wider flex justify-between items-center ${
+                  stage === 'Fechamento' ? 'text-emerald-700 bg-emerald-50/50 rounded-t-xl' : 'text-slate-600'
+                }`}>
+                  {stage}
+                  <span className="bg-white px-2 py-0.5 rounded-full text-[10px] border border-slate-200">{stageLeads.length}</span>
+                </div>
+                <div className="p-3 space-y-3 overflow-y-auto flex-1 custom-scrollbar">
+                  {stageLeads.map(lead => (
+                    <div 
+                      key={lead.id} 
+                      onClick={() => setSelectedLead(lead)}
+                      className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition-all cursor-pointer group"
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className="font-bold text-slate-800 text-sm line-clamp-1">{lead.company}</h4>
+                        {/* Simple stage mover for simplicity */}
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1" onClick={e => e.stopPropagation()}>
+                           {stage !== 'Prospectado' && (
+                             <button onClick={() => moveStage(lead, stages[stages.indexOf(stage) - 1])} className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600" title="Voltar estágio">
+                               <ArrowRight size={14} className="rotate-180"/>
+                             </button>
+                           )}
+                           {stage !== 'Fechamento' && (
+                             <button onClick={() => moveStage(lead, stages[stages.indexOf(stage) + 1])} className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600" title="Avançar estágio">
+                               <ArrowRight size={14}/>
+                             </button>
+                           )}
+                        </div>
+                      </div>
+                      
+                      {lead.decisionMaker && (
+                        <p className="text-xs text-slate-500 mb-1 flex items-center gap-1">
+                          <User size={12}/> {lead.decisionMaker}
+                        </p>
+                      )}
+                      
+                      {lead.nextActionDate && (
+                        <div className={`mt-3 pt-2 border-t border-slate-50 flex justify-between items-center text-[10px] ${
+                          new Date(lead.nextActionDate) < new Date() ? 'text-red-600 font-semibold' : 'text-slate-400'
+                        }`}>
+                           <span className="flex items-center gap-1"><Calendar size={10} /> {formatDate(lead.nextActionDate)}</span>
+                           <span>{lead.nextActionType}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <LeadDetailModal 
+        lead={selectedLead} 
+        isOpen={!!selectedLead} 
+        onClose={() => setSelectedLead(null)}
+        onSave={handleUpdateLead}
+      />
+
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+             <h3 className="font-bold text-lg text-slate-800 mb-4">Novo Lead</h3>
+             <input 
+               className="w-full mb-3 px-3 py-2 border rounded-lg text-sm outline-none focus:border-indigo-500"
+               placeholder="Nome da Empresa"
+               value={newLead.company}
+               onChange={e => setNewLead({...newLead, company: e.target.value})}
+             />
+             <input 
+               className="w-full mb-4 px-3 py-2 border rounded-lg text-sm outline-none focus:border-indigo-500"
+               placeholder="Telefone / Contato"
+               value={newLead.phone}
+               onChange={e => setNewLead({...newLead, phone: e.target.value})}
+             />
+             <div className="flex justify-end gap-2">
+               <button onClick={() => setIsModalOpen(false)} className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded">Cancelar</button>
+               <button onClick={handleAddLead} className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700">Adicionar</button>
+             </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ClientsView = ({ 
+  clients, 
+  setClients, 
+  demands, 
+  setDemands 
+}: { 
+  clients: Client[], 
+  setClients: React.Dispatch<React.SetStateAction<Client[]>>,
+  demands: Demand[],
+  setDemands: React.Dispatch<React.SetStateAction<Demand[]>>
+}) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+
+  const handleAddClient = (client: Client) => {
+    setClients([...clients, client]);
+    setIsModalOpen(false);
+  };
+
+  const handleAddDemand = (demand: Demand) => {
+    setDemands([...demands, demand]);
   };
 
   const handleToggleDemand = async (id: string) => {
-     const currentDemand = demands.find(d => d.id === id);
-     if (!currentDemand) return;
-     const newStatus = currentDemand.status === 'Pending' ? 'Done' : 'Pending';
-     
+     const current = demands.find(d => d.id === id);
+     if(!current) return;
+     const newStatus = current.status === 'Pending' ? 'Done' : 'Pending';
      setDemands(demands.map(d => d.id === id ? { ...d, status: newStatus } : d));
      await supabase.from('demands').update({ status: newStatus }).eq('id', id);
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8">
-      <div className="flex justify-between items-center">
+    <div className="p-8 max-w-7xl mx-auto">
+      <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-3xl font-bold text-slate-800">Clientes</h1>
-          <p className="text-slate-500">Gestão da carteira de clientes</p>
+          <p className="text-slate-500">Gestão da carteira ativa</p>
         </div>
         <button 
-          onClick={() => setIsNewModalOpen(true)}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm"
+          onClick={() => setIsModalOpen(true)}
+          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors font-medium shadow-sm"
         >
           <Plus size={18} /> Novo Cliente
         </button>
@@ -1178,40 +1382,53 @@ const ClientsView = ({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {clients.map(client => (
           <div 
-            key={client.id} 
+            key={client.id}
             onClick={() => setSelectedClient(client)}
-            className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer group"
+            className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-all cursor-pointer group relative overflow-hidden"
           >
-            <div className="flex justify-between items-start mb-4">
-              <div className="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold text-lg group-hover:bg-indigo-100 group-hover:text-indigo-700 transition-colors">
-                 {client.company.substring(0, 2).toUpperCase()}
-              </div>
-              <Badge color={client.status === 'Active' ? 'green' : 'gray'}>{client.status === 'Active' ? 'Ativo' : 'Inativo'}</Badge>
+            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-100 transition-opacity">
+               <ChevronRight className="text-slate-400" />
             </div>
             
-            <h3 className="text-lg font-bold text-slate-800 mb-1">{client.company}</h3>
-            <p className="text-sm text-slate-500 mb-4">{client.name}</p>
-            
-            <div className="flex flex-wrap gap-2 mb-4">
-              {client.services.map(s => (
-                <span key={s} className="text-[10px] px-2 py-1 bg-slate-50 border border-slate-100 rounded text-slate-600">
-                  {s}
-                </span>
-              ))}
+            <div className="flex items-center gap-4 mb-4">
+              <div className="h-12 w-12 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold text-lg">
+                {client.company.substring(0, 2).toUpperCase()}
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-800 text-lg leading-tight">{client.company}</h3>
+                <p className="text-slate-500 text-sm">{client.name}</p>
+              </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-50 flex justify-between items-center text-sm text-slate-500">
-               <span className="flex items-center gap-1"><Phone size={14}/> {client.phone}</span>
-               <ChevronRight size={16} className="text-slate-300 group-hover:text-indigo-500 transition-colors" />
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                {client.services.slice(0, 3).map(s => (
+                   <span key={s} className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded font-medium border border-slate-200">
+                     {s}
+                   </span>
+                ))}
+                {client.services.length > 3 && (
+                  <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded font-medium border border-slate-200">
+                    +{client.services.length - 3}
+                  </span>
+                )}
+              </div>
+              
+              <div className="pt-3 border-t border-slate-100 flex justify-between items-center text-xs text-slate-500">
+                 <span className="flex items-center gap-1"><Phone size={12}/> {client.phone}</span>
+                 <span className={`px-2 py-0.5 rounded-full ${client.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                   {client.status === 'Active' ? 'Ativo' : 'Inativo'}
+                 </span>
+              </div>
             </div>
           </div>
         ))}
       </div>
 
       <NewClientModal 
-        isOpen={isNewModalOpen} 
-        onClose={() => setIsNewModalOpen(false)} 
-        onSave={handleAddClient} 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        onSave={handleAddClient}
       />
 
       <ClientDetailModal 
@@ -1226,14 +1443,14 @@ const ClientsView = ({
   );
 };
 
-const AgendaView = ({
-  events,
-  setEvents,
-  clients
-}: {
-  events: AgendaEvent[];
-  setEvents: React.Dispatch<React.SetStateAction<AgendaEvent[]>>;
-  clients: Client[];
+const AgendaView = ({ 
+  events, 
+  setEvents, 
+  clients 
+}: { 
+  events: AgendaEvent[], 
+  setEvents: React.Dispatch<React.SetStateAction<AgendaEvent[]>>,
+  clients: Client[] 
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -1242,74 +1459,73 @@ const AgendaView = ({
     setIsModalOpen(false);
   };
 
-  const handleToggleEvent = async (id: string) => {
-    const current = events.find(e => e.id === id);
-    if (!current) return;
-    const newStatus = current.status === 'Pending' ? 'Done' : 'Pending';
-    
-    setEvents(events.map(e => e.id === id ? { ...e, status: newStatus } : e));
-    await supabase.from('agenda_events').update({ status: newStatus }).eq('id', id);
-  };
+  // Group events by date
+  const groupedEvents = events.reduce((acc, event) => {
+    const date = event.date;
+    if (!acc[date]) acc[date] = [];
+    acc[date].push(event);
+    return acc;
+  }, {} as Record<string, AgendaEvent[]>);
 
-  const sortedEvents = [...events].sort((a, b) => {
-     return new Date(a.date + 'T' + a.time).getTime() - new Date(b.date + 'T' + b.time).getTime();
-  });
+  const sortedDates = Object.keys(groupedEvents).sort();
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8">
-      <div className="flex justify-between items-center">
+    <div className="p-8 max-w-4xl mx-auto">
+      <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-3xl font-bold text-slate-800">Agenda</h1>
-          <p className="text-slate-500">Compromissos e Reuniões</p>
+          <p className="text-slate-500">Compromissos e tarefas</p>
         </div>
         <button 
           onClick={() => setIsModalOpen(true)}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm"
+          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors font-medium shadow-sm"
         >
           <Plus size={18} /> Novo Evento
         </button>
       </div>
 
-      <div className="space-y-4">
-        {sortedEvents.length > 0 ? sortedEvents.map(event => {
-          const client = clients.find(c => c.id === event.clientId);
-          const isDone = event.status === 'Done';
-          
-          return (
-             <div key={event.id} className={`flex flex-col md:flex-row gap-4 p-4 rounded-xl border transition-all ${isDone ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-white border-slate-200 hover:shadow-md'}`}>
-                <div className="flex flex-col items-center justify-center p-3 bg-indigo-50 rounded-lg min-w-[80px]">
-                   <span className="text-xs font-bold text-indigo-400 uppercase">{new Date(event.date).toLocaleDateString('pt-BR', { weekday: 'short' })}</span>
-                   <span className="text-2xl font-bold text-indigo-700">{new Date(event.date).getDate()}</span>
-                </div>
-                
-                <div className="flex-1">
-                   <div className="flex items-start justify-between">
-                      <div>
-                        <h3 className={`font-bold text-lg ${isDone ? 'line-through text-slate-500' : 'text-slate-800'}`}>{event.title}</h3>
-                        <p className="text-sm text-slate-500 flex items-center gap-2 mt-1">
-                           <Clock size={14} /> {event.time}
-                           {client && <span className="flex items-center gap-1 ml-2"><Briefcase size={14} /> {client.company}</span>}
-                        </p>
-                      </div>
-                      <Badge color={event.type === 'Reunião' ? 'purple' : 'blue'}>{event.type}</Badge>
-                   </div>
-                   {event.description && <p className="text-sm text-slate-600 mt-2 bg-slate-50 p-2 rounded">{event.description}</p>}
-                </div>
-                
-                <div className="flex items-center">
-                   <button 
-                    onClick={() => handleToggleEvent(event.id)}
-                    className={`p-2 rounded-full transition-colors ${isDone ? 'text-emerald-500 hover:bg-emerald-50' : 'text-slate-300 hover:bg-slate-100 hover:text-indigo-600'}`}
-                   >
-                     {isDone ? <CheckCircle2 size={24} /> : <CircleSlash size={24} />}
-                   </button>
-                </div>
-             </div>
-          );
-        }) : (
-           <div className="text-center py-10 bg-white rounded-xl border border-dashed border-slate-200 text-slate-400">
-             Nenhum evento agendado.
-           </div>
+      <div className="space-y-8">
+        {sortedDates.length > 0 ? sortedDates.map(date => (
+          <div key={date} className="relative pl-8 before:absolute before:left-[11px] before:top-2 before:bottom-0 before:w-[2px] before:bg-indigo-100 last:before:hidden">
+            <div className="absolute left-0 top-0 w-6 h-6 rounded-full bg-indigo-100 border-4 border-white flex items-center justify-center">
+              <div className="w-2 h-2 rounded-full bg-indigo-600"></div>
+            </div>
+            
+            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+              {formatDate(date)} 
+              {date === new Date().toISOString().split('T')[0] && <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 rounded-full normal-case">Hoje</span>}
+            </h3>
+
+            <div className="space-y-3">
+              {groupedEvents[date].sort((a,b) => a.time.localeCompare(b.time)).map(event => {
+                const client = clients.find(c => c.id === event.clientId);
+                return (
+                  <div key={event.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex gap-4">
+                    <div className="flex flex-col items-center justify-center px-3 border-r border-slate-100 min-w-[80px]">
+                       <span className="text-lg font-bold text-slate-700">{event.time}</span>
+                       <span className="text-[10px] text-slate-400 uppercase font-medium">{event.type}</span>
+                    </div>
+                    <div>
+                       <h4 className="font-bold text-slate-800">{event.title}</h4>
+                       {client && (
+                         <p className="text-sm text-indigo-600 font-medium flex items-center gap-1 mt-1">
+                           <Briefcase size={12}/> {client.company}
+                         </p>
+                       )}
+                       {event.description && (
+                         <p className="text-sm text-slate-500 mt-2 line-clamp-2">{event.description}</p>
+                       )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )) : (
+          <div className="text-center py-12 bg-white rounded-xl border border-dashed border-slate-200">
+            <Calendar size={48} className="mx-auto text-slate-300 mb-4" />
+            <p className="text-slate-500">Nenhum evento agendado.</p>
+          </div>
         )}
       </div>
 
@@ -1318,456 +1534,6 @@ const AgendaView = ({
         onClose={() => setIsModalOpen(false)} 
         onSave={handleAddEvent}
         clients={clients}
-      />
-    </div>
-  );
-};
-
-const ProspectionView = ({
-  leads,
-  setLeads
-}: {
-  leads: ProspectionLead[];
-  setLeads: React.Dispatch<React.SetStateAction<ProspectionLead[]>>;
-}) => {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedLead, setSelectedLead] = useState<ProspectionLead | null>(null);
-  const [newLead, setNewLead] = useState<{
-    company: string;
-    phone: string;
-    decisionMaker: string;
-    bridge: string;
-    source: string;
-    notes: string;
-    proposalValue: string;
-    proposalDetails: string;
-    nextActionDate: string;
-    nextActionType: string;
-  }>({
-    company: '',
-    phone: '',
-    decisionMaker: '',
-    bridge: '',
-    source: '',
-    notes: '',
-    proposalValue: '',
-    proposalDetails: '',
-    nextActionDate: '',
-    nextActionType: 'Reunião'
-  });
-  const [draggedLeadId, setDraggedLeadId] = useState<string | null>(null);
-
-  const stages: ProspectionStage[] = ['Prospectado', 'Marcou Reunião', 'Congelado', 'Sem Interesse', 'Fechamento'];
-
-  const getStageColor = (stage: ProspectionStage) => {
-    switch (stage) {
-      case 'Prospectado': return 'border-blue-200 bg-blue-50/30';
-      case 'Marcou Reunião': return 'border-purple-200 bg-purple-50/30';
-      case 'Congelado': return 'border-amber-200 bg-amber-50/30';
-      case 'Sem Interesse': return 'border-red-200 bg-red-50/30';
-      case 'Fechamento': return 'border-emerald-200 bg-emerald-50/30';
-      default: return 'border-slate-200 bg-slate-50';
-    }
-  };
-
-  const getStageIcon = (stage: ProspectionStage) => {
-    switch (stage) {
-      case 'Prospectado': return <Target size={16} className="text-blue-600" />;
-      case 'Marcou Reunião': return <Users size={16} className="text-purple-600" />;
-      case 'Congelado': return <IceCream size={16} className="text-amber-600" />;
-      case 'Sem Interesse': return <CircleSlash size={16} className="text-red-600" />;
-      case 'Fechamento': return <Handshake size={16} className="text-emerald-600" />;
-    }
-  };
-
-  const moveLead = async (id: string, newStage: ProspectionStage) => {
-    // Optimistic Update
-    setLeads(leads.map(l => l.id === id ? { ...l, stage: newStage } : l));
-    
-    // DB Update
-    await supabase.from('prospection_leads').update({ stage: newStage }).eq('id', id);
-  };
-
-  const handleUpdateLead = (updatedLead: ProspectionLead) => {
-    setLeads(leads.map(l => l.id === updatedLead.id ? updatedLead : l));
-  };
-
-  const handleAddLead = async () => {
-    if (!newLead.company) return;
-
-    const { data, error } = await supabase.from('prospection_leads').insert([{
-      company: newLead.company,
-      phone: newLead.phone,
-      stage: 'Prospectado',
-      decision_maker: newLead.decisionMaker,
-      bridge: newLead.bridge,
-      source: newLead.source,
-      notes: newLead.notes,
-      proposal_value: newLead.proposalValue,
-      proposal_details: newLead.proposalDetails,
-      next_action_date: newLead.nextActionDate || null,
-      next_action_type: newLead.nextActionType
-    }]).select();
-
-    if (error) {
-      console.error(error);
-      return;
-    }
-
-    if (data) {
-      setLeads([...leads, mapLead(data[0])]);
-      setNewLead({ 
-        company: '', 
-        phone: '', 
-        decisionMaker: '', 
-        bridge: '', 
-        source: '', 
-        notes: '', 
-        proposalValue: '', 
-        proposalDetails: '', 
-        nextActionDate: '', 
-        nextActionType: 'Reunião'
-      });
-      setIsModalOpen(false);
-    }
-  };
-
-  const handleDeleteLead = async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if(confirm('Tem certeza que deseja excluir este lead?')) {
-        setLeads(leads.filter(l => l.id !== id));
-        await supabase.from('prospection_leads').delete().eq('id', id);
-    }
-  }
-
-  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, id: string) => {
-    setDraggedLeadId(id);
-    e.dataTransfer.setData('text/plain', id);
-    e.dataTransfer.effectAllowed = 'move';
-  };
-
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  };
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>, stage: ProspectionStage) => {
-    e.preventDefault();
-    const id = e.dataTransfer.getData('text/plain');
-    if (id) {
-      moveLead(id, stage);
-    }
-    setDraggedLeadId(null);
-  };
-
-  const totalLeads = leads.length;
-  const totalMeetings = leads.filter(l => l.stage === 'Marcou Reunião' || l.stage === 'Fechamento').length;
-  const totalClosures = leads.filter(l => l.stage === 'Fechamento').length;
-
-  const leadsToMeetingRatio = totalMeetings > 0 ? (totalLeads / totalMeetings).toFixed(1) : '0';
-  const leadsToClosureRatio = totalClosures > 0 ? (totalLeads / totalClosures).toFixed(1) : '0';
-
-  return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8">
-      {/* ... Header and Stats (Same as before) ... */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-800">Controle de Prospecção</h1>
-          <p className="text-slate-500">Gestão do funil de vendas e métricas de conversão</p>
-        </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm"
-        >
-          <Plus size={18} /> Novo Lead
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-3 text-slate-400 mb-2">
-            <Target size={20} />
-            <span className="text-sm font-medium">Total Leads</span>
-          </div>
-          <p className="text-3xl font-bold text-slate-800">{totalLeads}</p>
-        </div>
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-3 text-slate-400 mb-2">
-            <Users size={20} />
-            <span className="text-sm font-medium">Reuniões</span>
-          </div>
-          <p className="text-3xl font-bold text-slate-800">{totalMeetings}</p>
-        </div>
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-3 text-slate-400 mb-2">
-            <Handshake size={20} />
-            <span className="text-sm font-medium">Fechamentos</span>
-          </div>
-          <p className="text-3xl font-bold text-emerald-600">{totalClosures}</p>
-        </div>
-        <div className="bg-indigo-900 p-6 rounded-2xl shadow-lg text-white">
-          <div className="flex items-center gap-3 text-indigo-300 mb-2">
-            <BarChart3 size={20} />
-            <span className="text-sm font-medium tracking-wide uppercase">Lei dos Números</span>
-          </div>
-          <div className="space-y-1">
-            <p className="text-xs text-indigo-200">Para fechar 1 empresa, você precisa de:</p>
-            <p className="text-xl font-bold">{leadsToClosureRatio} Leads</p>
-            <p className="text-xs text-indigo-300 mt-2">Conversão Reunião: {leadsToMeetingRatio} leads</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-col lg:flex-row gap-4 overflow-x-auto pb-4 h-[calc(100vh-400px)] min-h-[500px]">
-        {stages.map(stage => (
-          <div 
-            key={stage} 
-            className="flex-1 min-w-[280px] bg-slate-100/50 rounded-2xl border border-slate-200 flex flex-col overflow-hidden transition-colors hover:bg-slate-100"
-            onDragOver={handleDragOver}
-            onDrop={(e) => handleDrop(e, stage)}
-          >
-            <div className={`p-4 border-b flex justify-between items-center ${getStageColor(stage)}`}>
-              <div className="flex items-center gap-2">
-                {getStageIcon(stage)}
-                <h3 className="text-sm font-bold text-slate-700">{stage}</h3>
-              </div>
-              <span className="bg-white/50 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                {leads.filter(l => l.stage === stage).length}
-              </span>
-            </div>
-            
-            <div className="flex-1 p-3 space-y-3 overflow-y-auto custom-scrollbar">
-              {leads.filter(l => l.stage === stage).map(lead => (
-                <div 
-                  key={lead.id} 
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, lead.id)}
-                  onClick={() => setSelectedLead(lead)}
-                  className={`bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all group relative cursor-pointer active:cursor-grabbing ${draggedLeadId === lead.id ? 'opacity-50 ring-2 ring-indigo-400 rotate-2' : ''}`}
-                >
-                  <div className="flex justify-between items-start mb-2">
-                    <p className="font-bold text-slate-800 text-sm leading-tight pr-6">{lead.company}</p>
-                    <div className="absolute top-4 right-4 text-slate-300 opacity-50 group-hover:opacity-100 cursor-grab">
-                      <GripVertical size={16} />
-                    </div>
-                  </div>
-                  
-                  {lead.decisionMaker && (
-                    <p className="text-xs text-slate-600 mb-1 flex items-center gap-1.5 font-medium">
-                      <UserCheck size={12} className="text-indigo-500"/> {lead.decisionMaker}
-                    </p>
-                  )}
-                  {lead.bridge && (
-                    <p className="text-xs text-slate-500 mb-1 flex items-center gap-1.5">
-                      <User size={12}/> Ponte: {lead.bridge}
-                    </p>
-                  )}
-                  
-                  <div className="flex justify-between items-center mt-3 pt-2 border-t border-slate-50">
-                     <p className="text-[10px] text-slate-400 flex items-center gap-1">
-                        <Phone size={10}/> {lead.phone}
-                     </p>
-                     {lead.source && (
-                       <span className="text-[9px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded border border-slate-200">
-                         {lead.source}
-                       </span>
-                     )}
-                  </div>
-                  
-                  <div className="flex flex-wrap gap-1 mt-3">
-                    {stages.filter(s => s !== stage).map(nextStage => (
-                      <button 
-                        key={nextStage}
-                        onClick={(e) => { e.stopPropagation(); moveLead(lead.id, nextStage); }}
-                        className="text-[9px] font-bold px-1.5 py-0.5 bg-slate-50 text-slate-400 rounded border border-slate-100 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-100 transition-colors"
-                      >
-                        {nextStage === 'Marcou Reunião' ? 'REUNIÃO' : nextStage.toUpperCase()}
-                      </button>
-                    ))}
-                    <button onClick={(e) => handleDeleteLead(e, lead.id)} className="ml-auto text-slate-300 hover:text-red-500"><Trash2 size={12}/></button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
-            <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-slate-50">
-              <div>
-                <h2 className="text-xl font-bold text-slate-800">Cadastrar Prospecção</h2>
-                <p className="text-sm text-slate-500">Preencha os detalhes completos do lead</p>
-              </div>
-              <button onClick={() => setIsModalOpen(false)}><X size={24} className="text-slate-400 hover:text-slate-600" /></button>
-            </div>
-            
-            <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
-              <div className="space-y-6">
-                {/* Seção 1: Dados da Empresa */}
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                  <h3 className="text-sm font-bold text-indigo-700 mb-3 flex items-center gap-2">
-                    <Briefcase size={16}/> Dados da Empresa & Origem
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">Nome da Empresa *</label>
-                      <input 
-                        type="text" 
-                        placeholder="Ex: Padaria do Zé"
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-                        value={newLead.company}
-                        onChange={e => setNewLead({...newLead, company: e.target.value})}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">Origem do Lead</label>
-                      <select 
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white"
-                        value={newLead.source}
-                        onChange={e => setNewLead({...newLead, source: e.target.value})}
-                      >
-                         <option value="">Selecione...</option>
-                         <option value="Indicação">Indicação</option>
-                         <option value="Instagram">Instagram</option>
-                         <option value="Tráfego Pago">Tráfego Pago</option>
-                         <option value="Cold Call">Cold Call</option>
-                         <option value="Porta a Porta">Porta a Porta</option>
-                         <option value="Google Meu Negócio">Google Meu Negócio</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Seção 2: Contatos */}
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                   <h3 className="text-sm font-bold text-indigo-700 mb-3 flex items-center gap-2">
-                    <Users size={16}/> Contatos Chave
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                       <label className="block text-xs font-semibold text-slate-600 mb-1">Decisor (Dono/Gerente)</label>
-                       <input 
-                        type="text" 
-                        placeholder="Nome de quem manda"
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-                        value={newLead.decisionMaker}
-                        onChange={e => setNewLead({...newLead, decisionMaker: e.target.value})}
-                      />
-                    </div>
-                    <div>
-                       <label className="block text-xs font-semibold text-slate-600 mb-1">Ponte (Secretária/Sócio)</label>
-                       <input 
-                        type="text" 
-                        placeholder="Quem facilitou?"
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-                        value={newLead.bridge}
-                        onChange={e => setNewLead({...newLead, bridge: e.target.value})}
-                      />
-                    </div>
-                    <div className="md:col-span-2">
-                       <label className="block text-xs font-semibold text-slate-600 mb-1">Telefone / WhatsApp</label>
-                       <input 
-                        type="text" 
-                        placeholder="(00) 00000-0000"
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-                        value={newLead.phone}
-                        onChange={e => setNewLead({...newLead, phone: e.target.value})}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Seção 3: Inteligência & Proposta */}
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                   <h3 className="text-sm font-bold text-indigo-700 mb-3 flex items-center gap-2">
-                    <Megaphone size={16}/> Inteligência & Proposta
-                  </h3>
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">Valor Proposta (R$)</label>
-                        <input 
-                          type="number" 
-                          placeholder="0,00"
-                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-                          value={newLead.proposalValue}
-                          onChange={e => setNewLead({...newLead, proposalValue: e.target.value})}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">Observações Gerais</label>
-                        <input 
-                          type="text" 
-                          placeholder="Dores do cliente, nicho..."
-                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-                          value={newLead.notes}
-                          onChange={e => setNewLead({...newLead, notes: e.target.value})}
-                        />
-                      </div>
-                   </div>
-                   <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">Detalhes da Proposta / Serviços</label>
-                      <textarea
-                        rows={2}
-                        placeholder="O que foi oferecido? (Ex: Tráfego + Social Media)"
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm resize-none"
-                        value={newLead.proposalDetails}
-                        onChange={e => setNewLead({...newLead, proposalDetails: e.target.value})}
-                      />
-                   </div>
-                </div>
-
-                {/* Seção 4: Próximo Passo */}
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                   <h3 className="text-sm font-bold text-indigo-700 mb-3 flex items-center gap-2">
-                    <CalendarDays size={16}/> Próximo Passo (Atividade)
-                  </h3>
-                  <div className="grid grid-cols-2 gap-4">
-                     <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">Tipo de Ação</label>
-                        <select 
-                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white"
-                          value={newLead.nextActionType}
-                          onChange={e => setNewLead({...newLead, nextActionType: e.target.value})}
-                        >
-                           <option value="Ligar">Ligar</option>
-                           <option value="WhatsApp">WhatsApp</option>
-                           <option value="Reunião">Reunião</option>
-                           <option value="Visita">Visita</option>
-                        </select>
-                     </div>
-                     <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">Data</label>
-                        <input 
-                          type="date"
-                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-                          value={newLead.nextActionDate}
-                          onChange={e => setNewLead({...newLead, nextActionDate: e.target.value})}
-                        />
-                     </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-6 border-t border-slate-100 flex justify-end gap-3 bg-white">
-              <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">Cancelar</button>
-              <button onClick={handleAddLead} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg text-sm font-medium shadow-md transition-colors flex items-center gap-2">
-                <CheckCircle2 size={16} /> Salvar Lead
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Detail Modal */}
-      <LeadDetailModal 
-        lead={selectedLead} 
-        isOpen={!!selectedLead} 
-        onClose={() => setSelectedLead(null)} 
-        onSave={handleUpdateLead} 
       />
     </div>
   );
@@ -2111,6 +1877,7 @@ const App = () => {
   const [events, setEvents] = useState<AgendaEvent[]>([]);
   const [leads, setLeads] = useState<ProspectionLead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   if (!supabase) {
     return <SetupScreen />;
@@ -2152,6 +1919,11 @@ const App = () => {
     await supabase.from('demands').update({ status: newStatus }).eq('id', id);
   };
 
+  const handleNavClick = (viewName: 'dashboard' | 'clients' | 'finance' | 'agenda' | 'prospection') => {
+    setView(viewName);
+    setIsMobileMenuOpen(false);
+  };
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#f8fafc]">
@@ -2165,52 +1937,73 @@ const App = () => {
 
   return (
     <div className="flex h-screen bg-[#f8fafc]">
-      <aside className="w-64 bg-white border-r border-slate-200 flex flex-col">
-        <div className="p-6">
-          <div className="flex items-center gap-2 text-indigo-700 mb-2">
+      
+      {/* Mobile Menu Overlay */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-30 md:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* Sidebar - Responsive */}
+      <aside className={`
+          w-64 bg-white border-r border-slate-200 flex flex-col 
+          fixed inset-y-0 left-0 z-40 transition-transform duration-300 ease-in-out
+          md:relative md:translate-x-0
+          ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
+        <div className="p-6 flex justify-between items-center">
+          <div className="flex items-center gap-2 text-indigo-700">
             <div className="bg-indigo-600 text-white p-1.5 rounded-lg"><TrendingUp size={20} /></div>
             <span className="text-xl font-bold tracking-tight">VM Marketing</span>
           </div>
-          <p className="text-xs text-slate-400 uppercase tracking-widest pl-1">CRM Control</p>
+          {/* Close Button Mobile */}
+          <button 
+             onClick={() => setIsMobileMenuOpen(false)}
+             className="md:hidden text-slate-400 hover:text-slate-600"
+          >
+            <X size={24} />
+          </button>
         </div>
 
         {/* Real-time Clock */}
         <SaoPauloClock />
 
-        <nav className="flex-1 px-4 space-y-1">
+        <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
           <button 
-            onClick={() => setView('dashboard')}
+            onClick={() => handleNavClick('dashboard')}
             className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors ${view === 'dashboard' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
           >
             <LayoutDashboard size={18} /> Visão Geral
           </button>
           <button 
-            onClick={() => setView('prospection')}
+            onClick={() => handleNavClick('prospection')}
             className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors ${view === 'prospection' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
           >
             <Target size={18} /> Prospecção
           </button>
           <button 
-            onClick={() => setView('clients')}
+            onClick={() => handleNavClick('clients')}
             className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors ${view === 'clients' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
           >
             <Users size={18} /> Clientes
           </button>
           <button 
-            onClick={() => setView('agenda')}
+            onClick={() => handleNavClick('agenda')}
             className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors ${view === 'agenda' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
           >
             <CalendarDays size={18} /> Agenda
           </button>
           <button 
-            onClick={() => setView('finance')}
+            onClick={() => handleNavClick('finance')}
             className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors ${view === 'finance' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
           >
             <Wallet size={18} /> Financeiro
           </button>
         </nav>
         
-        <div className="p-4 border-t border-slate-100">
+        <div className="p-4 border-t border-slate-100 mt-auto">
           <div className="flex items-center gap-3">
             <div className="h-8 w-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-500">
                <Users size={14} />
@@ -2223,13 +2016,26 @@ const App = () => {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto">
-        {view === 'dashboard' && <Dashboard clients={clients} transactions={transactions} demands={demands} events={events} leads={leads} onToggleDemand={toggleDemand}/>}
-        {view === 'prospection' && <ProspectionView leads={leads} setLeads={setLeads} />}
-        {view === 'clients' && <ClientsView clients={clients} setClients={setClients} demands={demands} setDemands={setDemands}/>}
-        {view === 'agenda' && <AgendaView events={events} setEvents={setEvents} clients={clients}/>}
-        {view === 'finance' && <FinanceView clients={clients} transactions={transactions} setTransactions={setTransactions}/>}
-      </main>
+      <div className="flex-1 flex flex-col h-screen overflow-hidden">
+        {/* Mobile Header */}
+        <div className="md:hidden bg-white border-b border-slate-200 p-4 flex items-center justify-between shrink-0 z-20 sticky top-0">
+           <div className="flex items-center gap-2 text-indigo-700">
+              <div className="bg-indigo-600 text-white p-1 rounded-lg"><TrendingUp size={16} /></div>
+              <span className="font-bold tracking-tight">VM Marketing</span>
+           </div>
+           <button onClick={() => setIsMobileMenuOpen(true)} className="text-slate-600 p-2 bg-slate-50 rounded-lg active:bg-slate-100">
+             <Menu size={24} />
+           </button>
+        </div>
+
+        <main className="flex-1 overflow-y-auto">
+          {view === 'dashboard' && <Dashboard clients={clients} transactions={transactions} demands={demands} events={events} leads={leads} onToggleDemand={toggleDemand}/>}
+          {view === 'prospection' && <ProspectionView leads={leads} setLeads={setLeads} />}
+          {view === 'clients' && <ClientsView clients={clients} setClients={setClients} demands={demands} setDemands={setDemands}/>}
+          {view === 'agenda' && <AgendaView events={events} setEvents={setEvents} clients={clients}/>}
+          {view === 'finance' && <FinanceView clients={clients} transactions={transactions} setTransactions={setTransactions}/>}
+        </main>
+      </div>
     </div>
   );
 };
