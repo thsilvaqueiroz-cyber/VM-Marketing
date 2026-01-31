@@ -84,6 +84,8 @@ interface Client {
   startDate: string;
 }
 
+type RecurrenceType = 'One-time' | 'Fixed' | 'Installments';
+
 interface Transaction {
   id: string;
   clientId?: string;
@@ -92,6 +94,8 @@ interface Transaction {
   dueDate: string;
   status: 'Paid' | 'Pending';
   type: 'Receivable' | 'Payable';
+  recurrence: RecurrenceType;
+  installmentsTotal?: number;
 }
 
 interface Demand {
@@ -153,11 +157,13 @@ const mapClient = (data: any): Client => ({
 const mapTransaction = (data: any): Transaction => ({
   id: data.id,
   clientId: data.client_id,
-  description: data.description,
-  amount: parseFloat(data.amount),
-  dueDate: data.due_date,
-  status: data.status,
-  type: data.type
+  description: data.description || 'Sem descrição',
+  amount: parseFloat(data.amount) || 0,
+  dueDate: data.due_date || new Date().toISOString().split('T')[0], // Fallback para hoje se nulo
+  status: data.status || 'Pending',
+  type: data.type || 'Payable',
+  recurrence: data.recurrence || 'One-time',
+  installmentsTotal: data.installments_total || undefined
 });
 
 const mapDemand = (data: any): Demand => ({
@@ -204,18 +210,29 @@ const formatCurrency = (value: number) => {
 
 const formatDate = (dateString: string) => {
   if (!dateString) return '--/--/----';
-  const [year, month, day] = dateString.split('-');
-  return `${day}/${month}/${year}`;
+  try {
+    const [year, month, day] = dateString.split('-');
+    if (!day || !month || !year) return dateString;
+    return `${day}/${month}/${year}`;
+  } catch (e) {
+    return dateString;
+  }
 };
 
 const getDaysOverdue = (dueDate: string) => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const [y, m, d] = dueDate.split('-').map(Number);
-  const due = new Date(y, m - 1, d);
-  const diffTime = today.getTime() - due.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-  return diffDays > 0 ? diffDays : 0;
+  if (!dueDate) return 0;
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const [y, m, d] = dueDate.split('-').map(Number);
+    if (!y || !m || !d) return 0;
+    const due = new Date(y, m - 1, d);
+    const diffTime = today.getTime() - due.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+    return diffDays > 0 ? diffDays : 0;
+  } catch (e) {
+    return 0;
+  }
 };
 
 // --- Components ---
@@ -836,696 +853,488 @@ const ClientDetailModal = ({
   );
 };
 
-const LeadDetailModal = ({ 
-  lead, 
-  isOpen, 
-  onClose, 
-  onSave 
-}: { 
-  lead: ProspectionLead | null; 
-  isOpen: boolean; 
-  onClose: () => void;
-  onSave: (lead: ProspectionLead) => void; 
-}) => {
-  const [formData, setFormData] = useState<ProspectionLead | null>(null);
-
-  useEffect(() => {
-    if (lead) {
-      setFormData({ ...lead });
-    }
-  }, [lead]);
-
-  if (!isOpen || !formData) return null;
-
-  const handleSave = async () => {
-    if (formData) {
-       onSave(formData); // Optimistic update
-       const { error } = await supabase.from('prospection_leads').update({
-         company: formData.company,
-         phone: formData.phone,
-         decision_maker: formData.decisionMaker,
-         bridge: formData.bridge,
-         source: formData.source,
-         notes: formData.notes,
-         proposal_value: formData.proposalValue,
-         proposal_details: formData.proposalDetails,
-         next_action_type: formData.nextActionType,
-         next_action_date: formData.nextActionDate
-       }).eq('id', formData.id);
-
-       if (error) {
-         console.error('Error updating lead:', error);
-       }
-       onClose();
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-slate-50">
-          <div>
-            <h2 className="text-xl font-bold text-slate-800">Detalhes do Lead</h2>
-            <p className="text-sm text-slate-500">Visualizar e editar informações</p>
-          </div>
-          <button onClick={onClose}><X size={24} className="text-slate-400 hover:text-slate-600" /></button>
-        </div>
-        
-        <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
-          <div className="space-y-6">
-            {/* Seção 1: Dados da Empresa */}
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-              <h3 className="text-sm font-bold text-indigo-700 mb-3 flex items-center gap-2">
-                <Briefcase size={16}/> Dados da Empresa & Origem
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Nome da Empresa</label>
-                  <input 
-                    type="text" 
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-                    value={formData.company}
-                    onChange={e => setFormData({...formData, company: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Origem do Lead</label>
-                  <select 
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white"
-                    value={formData.source || ''}
-                    onChange={e => setFormData({...formData, source: e.target.value})}
-                  >
-                      <option value="">Selecione...</option>
-                      <option value="Indicação">Indicação</option>
-                      <option value="Instagram">Instagram</option>
-                      <option value="Tráfego Pago">Tráfego Pago</option>
-                      <option value="Cold Call">Cold Call</option>
-                      <option value="Porta a Porta">Porta a Porta</option>
-                      <option value="Google Meu Negócio">Google Meu Negócio</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* Seção 2: Contatos */}
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                <h3 className="text-sm font-bold text-indigo-700 mb-3 flex items-center gap-2">
-                <Users size={16}/> Contatos Chave
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Decisor</label>
-                    <input 
-                    type="text" 
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-                    value={formData.decisionMaker || ''}
-                    onChange={e => setFormData({...formData, decisionMaker: e.target.value})}
-                  />
-                </div>
-                <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Ponte</label>
-                    <input 
-                    type="text" 
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-                    value={formData.bridge || ''}
-                    onChange={e => setFormData({...formData, bridge: e.target.value})}
-                  />
-                </div>
-                <div className="md:col-span-2">
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Telefone / WhatsApp</label>
-                    <input 
-                    type="text" 
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-                    value={formData.phone}
-                    onChange={e => setFormData({...formData, phone: e.target.value})}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Seção 3: Inteligência & Proposta */}
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                <h3 className="text-sm font-bold text-indigo-700 mb-3 flex items-center gap-2">
-                <Megaphone size={16}/> Inteligência & Proposta
-              </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Valor Proposta (R$)</label>
-                    <input 
-                      type="number" 
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-                      value={formData.proposalValue || ''}
-                      onChange={e => setFormData({...formData, proposalValue: e.target.value})}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Observações Gerais</label>
-                    <input 
-                      type="text" 
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-                      value={formData.notes || ''}
-                      onChange={e => setFormData({...formData, notes: e.target.value})}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Detalhes da Proposta</label>
-                  <textarea
-                    rows={2}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm resize-none"
-                    value={formData.proposalDetails || ''}
-                    onChange={e => setFormData({...formData, proposalDetails: e.target.value})}
-                  />
-                </div>
-            </div>
-
-            {/* Seção 4: Próximo Passo */}
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                <h3 className="text-sm font-bold text-indigo-700 mb-3 flex items-center gap-2">
-                <CalendarDays size={16}/> Próximo Passo
-              </h3>
-              <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Tipo de Ação</label>
-                    <select 
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white"
-                      value={formData.nextActionType || 'Reunião'}
-                      onChange={e => setFormData({...formData, nextActionType: e.target.value})}
-                    >
-                        <option value="Ligar">Ligar</option>
-                        <option value="WhatsApp">WhatsApp</option>
-                        <option value="Reunião">Reunião</option>
-                        <option value="Visita">Visita</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Data</label>
-                    <input 
-                      type="date"
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-                      value={formData.nextActionDate || ''}
-                      onChange={e => setFormData({...formData, nextActionDate: e.target.value})}
-                    />
-                  </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-6 border-t border-slate-100 flex justify-end gap-3 bg-white">
-          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">Cancelar</button>
-          <button onClick={handleSave} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg text-sm font-medium shadow-md transition-colors flex items-center gap-2">
-            <Save size={16} /> Salvar Alterações
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const Dashboard = ({ 
   clients, 
   transactions, 
   demands, 
-  events,
+  events, 
   leads,
   onToggleDemand
 }: { 
   clients: Client[], 
   transactions: Transaction[], 
   demands: Demand[], 
-  events: AgendaEvent[],
+  events: AgendaEvent[], 
   leads: ProspectionLead[],
   onToggleDemand: (id: string) => void
 }) => {
   const activeClients = clients.filter(c => c.status === 'Active').length;
-  const pendingDemands = demands.filter(d => d.status === 'Pending').length;
-  const leadsInPipe = leads.filter(l => l.stage !== 'Sem Interesse' && l.stage !== 'Congelado').length;
   
-  const currentMonthRevenue = transactions
+  const currentMonth = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
+  
+  const monthlyRevenue = transactions
+    .filter(t => t.type === 'Receivable' && t.status === 'Paid')
     .filter(t => {
-      const d = new Date(t.dueDate);
-      const now = new Date();
-      return t.type === 'Receivable' && t.status === 'Paid' && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+       const d = new Date(t.dueDate);
+       return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
     })
-    .reduce((acc, t) => acc + t.amount, 0);
+    .reduce((acc, curr) => acc + curr.amount, 0);
 
-  const upcomingEvents = [...events]
-    .filter(e => e.status === 'Pending')
-    .sort((a, b) => new Date(a.date + 'T' + a.time).getTime() - new Date(b.date + 'T' + b.time).getTime())
-    .slice(0, 5);
-  
-  const urgentDemands = [...demands]
-    .filter(d => d.status === 'Pending')
-    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
-    .slice(0, 5);
+  const pendingDemands = demands.filter(d => d.status === 'Pending');
+  const todayEvents = events.filter(e => {
+    const today = new Date().toISOString().split('T')[0];
+    return e.date === today;
+  });
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
+    <div className="p-8 max-w-7xl mx-auto space-y-8">
       <div>
         <h1 className="text-3xl font-bold text-slate-800">Visão Geral</h1>
-        <p className="text-slate-500">Métricas principais e atividades recentes</p>
+        <p className="text-slate-500">Resumo de desempenho e atividades</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
-          <div>
-            <p className="text-slate-500 text-sm font-medium">Clientes Ativos</p>
-            <p className="text-3xl font-bold text-slate-800 mt-1">{activeClients}</p>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex justify-between items-start mb-4">
+             <div className="p-3 bg-indigo-50 rounded-xl text-indigo-600"><Users size={24}/></div>
+             <span className="text-xs font-bold text-slate-400 uppercase">Clientes Ativos</span>
           </div>
-          <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
-            <Users size={24} />
-          </div>
+          <h3 className="text-3xl font-bold text-slate-800">{activeClients}</h3>
+          <p className="text-sm text-slate-500 mt-1">Total na base: {clients.length}</p>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
-          <div>
-            <p className="text-slate-500 text-sm font-medium">Receita Mensal</p>
-            <p className="text-3xl font-bold text-slate-800 mt-1">{formatCurrency(currentMonthRevenue)}</p>
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex justify-between items-start mb-4">
+             <div className="p-3 bg-emerald-50 rounded-xl text-emerald-600"><DollarSign size={24}/></div>
+             <span className="text-xs font-bold text-slate-400 uppercase">Receita (Mês)</span>
           </div>
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-lg">
-            <DollarSign size={24} />
-          </div>
+          <h3 className="text-3xl font-bold text-slate-800">{formatCurrency(monthlyRevenue)}</h3>
+          <p className="text-sm text-slate-500 mt-1">Faturamento confirmado</p>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
-          <div>
-            <p className="text-slate-500 text-sm font-medium">Leads no Pipeline</p>
-            <p className="text-3xl font-bold text-slate-800 mt-1">{leadsInPipe}</p>
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex justify-between items-start mb-4">
+             <div className="p-3 bg-blue-50 rounded-xl text-blue-600"><CheckCircle2 size={24}/></div>
+             <span className="text-xs font-bold text-slate-400 uppercase">Tarefas Pendentes</span>
           </div>
-          <div className="p-3 bg-purple-50 text-purple-600 rounded-lg">
-            <Target size={24} />
-          </div>
+          <h3 className="text-3xl font-bold text-slate-800">{pendingDemands.length}</h3>
+          <p className="text-sm text-slate-500 mt-1">Demandas em aberto</p>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
-          <div>
-            <p className="text-slate-500 text-sm font-medium">Demandas Pendentes</p>
-            <p className="text-3xl font-bold text-slate-800 mt-1">{pendingDemands}</p>
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex justify-between items-start mb-4">
+             <div className="p-3 bg-orange-50 rounded-xl text-orange-600"><Target size={24}/></div>
+             <span className="text-xs font-bold text-slate-400 uppercase">Leads em Negociação</span>
           </div>
-          <div className="p-3 bg-orange-50 text-orange-600 rounded-lg">
-            <Briefcase size={24} />
-          </div>
+          <h3 className="text-3xl font-bold text-slate-800">
+            {leads.filter(l => ['Marcou Reunião', 'Fechamento'].includes(l.stage)).length}
+          </h3>
+          <p className="text-sm text-slate-500 mt-1">Potenciais fechamentos</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-            <h3 className="font-bold text-slate-800">Próximos Eventos</h3>
-            <Calendar size={18} className="text-slate-400" />
-          </div>
-          <div className="divide-y divide-slate-100">
-            {upcomingEvents.length > 0 ? upcomingEvents.map(event => (
-              <div key={event.id} className="p-4 hover:bg-slate-50 transition-colors">
-                <div className="flex justify-between items-start mb-1">
-                  <p className="font-medium text-slate-800 text-sm">{event.title}</p>
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{event.time}</span>
-                </div>
-                <p className="text-xs text-slate-500 mb-2">{formatDate(event.date)} • {event.type}</p>
-                {event.clientId && <Badge color="indigo">Cliente</Badge>}
-              </div>
-            )) : (
-              <p className="p-6 text-center text-slate-400 text-sm">Sem eventos próximos.</p>
-            )}
-          </div>
+        {/* Pending Demands */}
+        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+           <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+             <h3 className="font-bold text-slate-800">Demandas Prioritárias</h3>
+             <span className="text-xs font-medium bg-slate-100 text-slate-600 px-2 py-1 rounded-lg">{pendingDemands.length} pendentes</span>
+           </div>
+           <div className="divide-y divide-slate-100 max-h-[400px] overflow-y-auto">
+             {pendingDemands.length > 0 ? pendingDemands.slice(0, 10).map(demand => (
+               <div key={demand.id} className="p-4 flex items-center gap-4 hover:bg-slate-50 transition-colors">
+                  <button onClick={() => onToggleDemand(demand.id)} className="text-slate-400 hover:text-indigo-600">
+                    <Square size={20} />
+                  </button>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-slate-800">{demand.title}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[10px] bg-slate-100 px-1.5 rounded text-slate-500">{demand.service}</span>
+                      {getDaysOverdue(demand.dueDate) > 0 && (
+                        <span className="text-[10px] bg-red-50 text-red-600 px-1.5 rounded font-medium">Atrasado</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs text-slate-500">{formatDate(demand.dueDate)}</span>
+                  </div>
+               </div>
+             )) : (
+               <div className="p-8 text-center text-slate-400">Nenhuma demanda pendente.</div>
+             )}
+           </div>
         </div>
 
-        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-            <h3 className="font-bold text-slate-800">Demandas Urgentes</h3>
-            <CheckSquare size={18} className="text-slate-400" />
-          </div>
-          <div className="divide-y divide-slate-100">
-            {urgentDemands.length > 0 ? urgentDemands.map(demand => (
-              <div key={demand.id} className="p-4 flex items-center gap-4 hover:bg-slate-50 transition-colors">
-                 <button onClick={() => onToggleDemand(demand.id)} className="text-slate-400 hover:text-indigo-600">
-                    <Square size={20} />
-                 </button>
-                 <div className="flex-1">
-                    <p className="font-medium text-slate-800 text-sm">{demand.title}</p>
-                    <div className="flex gap-2 mt-1">
-                      <span className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-100">{demand.service}</span>
-                    </div>
+        {/* Agenda Today */}
+        <div className="bg-slate-50 rounded-2xl border border-slate-200 p-6">
+           <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+             <Calendar size={18} className="text-indigo-600"/> Agenda Hoje
+           </h3>
+           <div className="space-y-3">
+             {todayEvents.length > 0 ? todayEvents.map(event => (
+               <div key={event.id} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex gap-3">
+                 <div className="flex flex-col items-center justify-center bg-indigo-50 px-3 rounded-lg min-w-[60px]">
+                    <span className="text-xs font-bold text-indigo-700">{event.time}</span>
                  </div>
-                 <div className="text-right">
-                    <p className="text-xs font-medium text-red-600">{formatDate(demand.dueDate)}</p>
+                 <div>
+                   <p className="text-sm font-bold text-slate-800 line-clamp-1">{event.title}</p>
+                   <span className="text-xs text-slate-500 block">{event.type}</span>
                  </div>
-              </div>
-            )) : (
-              <p className="p-6 text-center text-slate-400 text-sm">Nenhuma demanda pendente.</p>
-            )}
-          </div>
+               </div>
+             )) : (
+               <p className="text-sm text-slate-400 text-center py-4">Sem eventos para hoje.</p>
+             )}
+           </div>
         </div>
       </div>
     </div>
   );
 };
 
-const ProspectionView = ({ 
-  leads, 
-  setLeads 
-}: { 
-  leads: ProspectionLead[], 
-  setLeads: React.Dispatch<React.SetStateAction<ProspectionLead[]>> 
+const ProspectionView = ({
+  leads,
+  setLeads
+}: {
+  leads: ProspectionLead[];
+  setLeads: React.Dispatch<React.SetStateAction<ProspectionLead[]>>;
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedLead, setSelectedLead] = useState<ProspectionLead | null>(null);
-  const [newLead, setNewLead] = useState({ company: '', phone: '' });
+  const [newLead, setNewLead] = useState<{
+    company: string;
+    phone: string;
+    decisionMaker: string;
+    source: string;
+  }>({
+    company: '',
+    phone: '',
+    decisionMaker: '',
+    source: ''
+  });
 
-  const stages: ProspectionStage[] = ['Prospectado', 'Marcou Reunião', 'Sem Interesse', 'Congelado', 'Fechamento'];
+  const stages: ProspectionStage[] = ['Prospectado', 'Marcou Reunião', 'Fechamento', 'Congelado', 'Sem Interesse'];
 
-  const handleAddLead = async () => {
-    if (!newLead.company) return;
+  const handleSave = async () => {
+    if(!newLead.company) return;
+    
     const { data, error } = await supabase.from('prospection_leads').insert([{
       company: newLead.company,
       phone: newLead.phone,
+      decision_maker: newLead.decisionMaker,
+      source: newLead.source,
       stage: 'Prospectado',
     }]).select();
 
-    if (error) {
+    if(error) {
       console.error(error);
       return;
     }
 
-    if (data) {
+    if(data) {
       setLeads([...leads, mapLead(data[0])]);
-      setNewLead({ company: '', phone: '' });
       setIsModalOpen(false);
+      setNewLead({ company: '', phone: '', decisionMaker: '', source: '' });
     }
   };
 
-  const handleUpdateLead = (updated: ProspectionLead) => {
-    setLeads(leads.map(l => l.id === updated.id ? updated : l));
-  };
-
-  const moveStage = async (lead: ProspectionLead, newStage: ProspectionStage) => {
+  const updateStage = async (id: string, newStage: ProspectionStage) => {
     // Optimistic
-    setLeads(leads.map(l => l.id === lead.id ? { ...l, stage: newStage } : l));
+    setLeads(leads.map(l => l.id === id ? { ...l, stage: newStage } : l));
     // DB
-    await supabase.from('prospection_leads').update({ stage: newStage }).eq('id', lead.id);
+    await supabase.from('prospection_leads').update({ stage: newStage }).eq('id', id);
   };
 
   return (
-    <div className="p-6 h-full flex flex-col overflow-hidden">
+    <div className="h-full flex flex-col p-6 overflow-hidden">
       <div className="flex justify-between items-center mb-6 shrink-0">
         <div>
            <h1 className="text-2xl font-bold text-slate-800">Prospecção</h1>
-           <p className="text-slate-500 text-sm">Pipeline de vendas</p>
+           <p className="text-slate-500">Pipeline de Vendas</p>
         </div>
         <button 
           onClick={() => setIsModalOpen(true)}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors shadow-sm"
+          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors"
         >
-          <Plus size={16} /> Novo Lead
+          <Plus size={18} /> Novo Lead
         </button>
       </div>
 
       <div className="flex-1 overflow-x-auto overflow-y-hidden pb-4">
-        <div className="flex gap-4 h-full min-w-[1000px]">
-          {stages.map(stage => {
-            const stageLeads = leads.filter(l => l.stage === stage);
-            return (
-              <div key={stage} className="flex-1 flex flex-col min-w-[280px] bg-slate-100/50 rounded-xl border border-slate-200/60">
-                <div className={`p-3 border-b border-slate-200 font-semibold text-xs uppercase tracking-wider flex justify-between items-center ${
-                  stage === 'Fechamento' ? 'text-emerald-700 bg-emerald-50/50 rounded-t-xl' : 'text-slate-600'
-                }`}>
-                  {stage}
-                  <span className="bg-white px-2 py-0.5 rounded-full text-[10px] border border-slate-200">{stageLeads.length}</span>
-                </div>
-                <div className="p-3 space-y-3 overflow-y-auto flex-1 custom-scrollbar">
-                  {stageLeads.map(lead => (
-                    <div 
-                      key={lead.id} 
-                      onClick={() => setSelectedLead(lead)}
-                      className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition-all cursor-pointer group"
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <h4 className="font-bold text-slate-800 text-sm line-clamp-1">{lead.company}</h4>
-                        {/* Simple stage mover for simplicity */}
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1" onClick={e => e.stopPropagation()}>
-                           {stage !== 'Prospectado' && (
-                             <button onClick={() => moveStage(lead, stages[stages.indexOf(stage) - 1])} className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600" title="Voltar estágio">
-                               <ArrowRight size={14} className="rotate-180"/>
-                             </button>
-                           )}
-                           {stage !== 'Fechamento' && (
-                             <button onClick={() => moveStage(lead, stages[stages.indexOf(stage) + 1])} className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600" title="Avançar estágio">
-                               <ArrowRight size={14}/>
-                             </button>
-                           )}
-                        </div>
-                      </div>
-                      
-                      {lead.decisionMaker && (
-                        <p className="text-xs text-slate-500 mb-1 flex items-center gap-1">
-                          <User size={12}/> {lead.decisionMaker}
-                        </p>
-                      )}
-                      
-                      {lead.nextActionDate && (
-                        <div className={`mt-3 pt-2 border-t border-slate-50 flex justify-between items-center text-[10px] ${
-                          new Date(lead.nextActionDate) < new Date() ? 'text-red-600 font-semibold' : 'text-slate-400'
-                        }`}>
-                           <span className="flex items-center gap-1"><Calendar size={10} /> {formatDate(lead.nextActionDate)}</span>
-                           <span>{lead.nextActionType}</span>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+        <div className="flex gap-4 h-full min-w-max">
+          {stages.map(stage => (
+            <div key={stage} className="w-80 flex flex-col bg-slate-100 rounded-xl p-3 h-full border border-slate-200">
+               <div className="flex items-center justify-between mb-3 px-2">
+                 <h3 className="font-bold text-slate-700 text-sm uppercase tracking-wide">{stage}</h3>
+                 <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full text-xs font-bold">
+                   {leads.filter(l => l.stage === stage).length}
+                 </span>
+               </div>
+               
+               <div className="flex-1 overflow-y-auto space-y-3 px-1 custom-scrollbar">
+                 {leads.filter(l => l.stage === stage).map(lead => (
+                   <div key={lead.id} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition-shadow group cursor-pointer">
+                     <div className="flex justify-between items-start mb-2">
+                       <h4 className="font-bold text-slate-800">{lead.company}</h4>
+                       <div className="relative">
+                         {/* Simple dropdown for stage change could go here, for now just buttons on hover or similar */}
+                       </div>
+                     </div>
+                     {lead.decisionMaker && <p className="text-xs text-slate-500 mb-1 flex items-center gap-1"><User size={12}/> {lead.decisionMaker}</p>}
+                     {lead.phone && <p className="text-xs text-slate-500 flex items-center gap-1"><Phone size={12}/> {lead.phone}</p>}
+                     
+                     <div className="mt-3 pt-3 border-t border-slate-100 flex gap-1 flex-wrap">
+                        {/* Quick Actions / Stage Move */}
+                        {stage !== 'Fechamento' && (
+                          <button onClick={() => updateStage(lead.id, 'Fechamento')} className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-1 rounded hover:bg-emerald-100">
+                            → Fechamento
+                          </button>
+                        )}
+                        {stage !== 'Marcou Reunião' && (
+                           <button onClick={() => updateStage(lead.id, 'Marcou Reunião')} className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100">
+                             → Reunião
+                           </button>
+                        )}
+                     </div>
+                   </div>
+                 ))}
+               </div>
+            </div>
+          ))}
         </div>
       </div>
 
-      <LeadDetailModal 
-        lead={selectedLead} 
-        isOpen={!!selectedLead} 
-        onClose={() => setSelectedLead(null)}
-        onSave={handleUpdateLead}
-      />
-
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
-             <h3 className="font-bold text-lg text-slate-800 mb-4">Novo Lead</h3>
-             <input 
-               className="w-full mb-3 px-3 py-2 border rounded-lg text-sm outline-none focus:border-indigo-500"
-               placeholder="Nome da Empresa"
-               value={newLead.company}
-               onChange={e => setNewLead({...newLead, company: e.target.value})}
-             />
-             <input 
-               className="w-full mb-4 px-3 py-2 border rounded-lg text-sm outline-none focus:border-indigo-500"
-               placeholder="Telefone / Contato"
-               value={newLead.phone}
-               onChange={e => setNewLead({...newLead, phone: e.target.value})}
-             />
-             <div className="flex justify-end gap-2">
-               <button onClick={() => setIsModalOpen(false)} className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded">Cancelar</button>
-               <button onClick={handleAddLead} className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700">Adicionar</button>
-             </div>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Novo Lead</h2>
+            <div className="space-y-4">
+               <input 
+                 placeholder="Empresa" 
+                 className="w-full px-3 py-2 border rounded-lg"
+                 value={newLead.company}
+                 onChange={e => setNewLead({...newLead, company: e.target.value})}
+               />
+               <input 
+                 placeholder="Decisor (Nome)" 
+                 className="w-full px-3 py-2 border rounded-lg"
+                 value={newLead.decisionMaker}
+                 onChange={e => setNewLead({...newLead, decisionMaker: e.target.value})}
+               />
+               <input 
+                 placeholder="Telefone / WhatsApp" 
+                 className="w-full px-3 py-2 border rounded-lg"
+                 value={newLead.phone}
+                 onChange={e => setNewLead({...newLead, phone: e.target.value})}
+               />
+               <input 
+                 placeholder="Origem (Indicação, Ads, etc)" 
+                 className="w-full px-3 py-2 border rounded-lg"
+                 value={newLead.source}
+                 onChange={e => setNewLead({...newLead, source: e.target.value})}
+               />
+               <div className="flex justify-end gap-2 pt-2">
+                 <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
+                 <button onClick={handleSave} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Salvar</button>
+               </div>
+            </div>
           </div>
         </div>
       )}
     </div>
   );
-};
+}
 
-const ClientsView = ({ 
-  clients, 
-  setClients, 
-  demands, 
-  setDemands 
-}: { 
-  clients: Client[], 
-  setClients: React.Dispatch<React.SetStateAction<Client[]>>,
-  demands: Demand[],
-  setDemands: React.Dispatch<React.SetStateAction<Demand[]>>
+const ClientsView = ({
+  clients,
+  setClients,
+  demands,
+  setDemands
+}: {
+  clients: Client[];
+  setClients: React.Dispatch<React.SetStateAction<Client[]>>;
+  demands: Demand[];
+  setDemands: React.Dispatch<React.SetStateAction<Demand[]>>;
 }) => {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [isNewClientOpen, setIsNewClientOpen] = useState(false);
+  const [detailClient, setDetailClient] = useState<Client | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
-  const handleAddClient = (client: Client) => {
-    setClients([...clients, client]);
-    setIsModalOpen(false);
-  };
-
-  const handleAddDemand = (demand: Demand) => {
-    setDemands([...demands, demand]);
-  };
-
-  const handleToggleDemand = async (id: string) => {
-     const current = demands.find(d => d.id === id);
-     if(!current) return;
-     const newStatus = current.status === 'Pending' ? 'Done' : 'Pending';
-     setDemands(demands.map(d => d.id === id ? { ...d, status: newStatus } : d));
-     await supabase.from('demands').update({ status: newStatus }).eq('id', id);
-  };
+  const filteredClients = clients.filter(c => 
+    c.company.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    c.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-800">Clientes</h1>
-          <p className="text-slate-500">Gestão da carteira ativa</p>
+           <h1 className="text-2xl font-bold text-slate-800">Clientes</h1>
+           <p className="text-slate-500">Gestão de carteira ativa</p>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors font-medium shadow-sm"
-        >
-          <Plus size={18} /> Novo Cliente
-        </button>
+        <div className="flex gap-3 w-full md:w-auto">
+          <div className="relative flex-1 md:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input 
+              type="text" 
+              placeholder="Buscar cliente..." 
+              className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <button 
+            onClick={() => setIsNewClientOpen(true)}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors"
+          >
+            <Plus size={18} /> Novo Cliente
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {clients.map(client => (
+        {filteredClients.map(client => (
           <div 
-            key={client.id}
-            onClick={() => setSelectedClient(client)}
-            className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-all cursor-pointer group relative overflow-hidden"
+            key={client.id} 
+            onClick={() => setDetailClient(client)}
+            className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer group"
           >
-            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-100 transition-opacity">
-               <ChevronRight className="text-slate-400" />
-            </div>
-            
-            <div className="flex items-center gap-4 mb-4">
-              <div className="h-12 w-12 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold text-lg">
-                {client.company.substring(0, 2).toUpperCase()}
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-800 text-lg leading-tight">{client.company}</h3>
-                <p className="text-slate-500 text-sm">{client.name}</p>
-              </div>
-            </div>
+             <div className="flex justify-between items-start mb-4">
+               <div className="h-12 w-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-lg">
+                 {client.company.substring(0,2).toUpperCase()}
+               </div>
+               <span className={`px-2 py-1 rounded-full text-xs font-medium ${client.status === 'Active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                 {client.status === 'Active' ? 'Ativo' : 'Inativo'}
+               </span>
+             </div>
+             
+             <h3 className="font-bold text-slate-800 text-lg mb-1">{client.company}</h3>
+             <p className="text-sm text-slate-500 mb-4">{client.name}</p>
 
-            <div className="space-y-3">
-              <div className="flex flex-wrap gap-2">
-                {client.services.slice(0, 3).map(s => (
-                   <span key={s} className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded font-medium border border-slate-200">
-                     {s}
-                   </span>
-                ))}
-                {client.services.length > 3 && (
-                  <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded font-medium border border-slate-200">
-                    +{client.services.length - 3}
-                  </span>
-                )}
-              </div>
-              
-              <div className="pt-3 border-t border-slate-100 flex justify-between items-center text-xs text-slate-500">
-                 <span className="flex items-center gap-1"><Phone size={12}/> {client.phone}</span>
-                 <span className={`px-2 py-0.5 rounded-full ${client.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                   {client.status === 'Active' ? 'Ativo' : 'Inativo'}
-                 </span>
-              </div>
-            </div>
+             <div className="flex flex-wrap gap-2 mb-4">
+               {client.services.slice(0,3).map(s => (
+                 <span key={s} className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded border border-slate-200">{s}</span>
+               ))}
+               {client.services.length > 3 && <span className="text-[10px] text-slate-400">+{client.services.length - 3}</span>}
+             </div>
+
+             <div className="pt-4 border-t border-slate-100 flex justify-between items-center text-sm text-slate-500">
+                <span className="flex items-center gap-1"><Briefcase size={14}/> {demands.filter(d => d.clientId === client.id && d.status === 'Pending').length} Pendentes</span>
+                <ChevronRight size={16} className="text-slate-300 group-hover:text-indigo-600 transition-colors"/>
+             </div>
           </div>
         ))}
       </div>
 
       <NewClientModal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        onSave={handleAddClient}
+        isOpen={isNewClientOpen} 
+        onClose={() => setIsNewClientOpen(false)} 
+        onSave={(newClient) => {
+          setClients([...clients, newClient]);
+          setIsNewClientOpen(false);
+        }}
       />
 
       <ClientDetailModal 
-        client={selectedClient} 
-        isOpen={!!selectedClient} 
-        onClose={() => setSelectedClient(null)}
+        client={detailClient}
+        isOpen={!!detailClient}
+        onClose={() => setDetailClient(null)}
         demands={demands}
-        onAddDemand={handleAddDemand}
-        onToggleDemandStatus={handleToggleDemand}
+        onAddDemand={(newDemand) => setDemands([...demands, newDemand])}
+        onToggleDemandStatus={async (id) => {
+           // This logic is duplicated from App, ideally pass handler from parent, but simplified here for prop drilling fix
+           const current = demands.find(d => d.id === id);
+           if(!current) return;
+           const newStatus = current.status === 'Pending' ? 'Done' : 'Pending';
+           setDemands(demands.map(d => d.id === id ? {...d, status: newStatus} : d));
+           await supabase.from('demands').update({ status: newStatus }).eq('id', id);
+        }}
       />
     </div>
   );
 };
 
-const AgendaView = ({ 
-  events, 
-  setEvents, 
-  clients 
-}: { 
-  events: AgendaEvent[], 
-  setEvents: React.Dispatch<React.SetStateAction<AgendaEvent[]>>,
-  clients: Client[] 
+const AgendaView = ({
+  events,
+  setEvents,
+  clients
+}: {
+  events: AgendaEvent[];
+  setEvents: React.Dispatch<React.SetStateAction<AgendaEvent[]>>;
+  clients: Client[];
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const today = new Date().toISOString().split('T')[0];
 
-  const handleAddEvent = (event: AgendaEvent) => {
-    setEvents([...events, event]);
-    setIsModalOpen(false);
+  const sortedEvents = [...events].sort((a, b) => {
+    return new Date(a.date + 'T' + a.time).getTime() - new Date(b.date + 'T' + b.time).getTime();
+  });
+
+  const getDayName = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(date);
   };
 
-  // Group events by date
-  const groupedEvents = events.reduce((acc, event) => {
-    const date = event.date;
-    if (!acc[date]) acc[date] = [];
-    acc[date].push(event);
-    return acc;
-  }, {} as Record<string, AgendaEvent[]>);
-
-  const sortedDates = Object.keys(groupedEvents).sort();
+  const groupedEvents: Record<string, AgendaEvent[]> = {};
+  sortedEvents.forEach(e => {
+    if (!groupedEvents[e.date]) groupedEvents[e.date] = [];
+    groupedEvents[e.date].push(e);
+  });
 
   return (
     <div className="p-8 max-w-4xl mx-auto">
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-slate-800">Agenda</h1>
-          <p className="text-slate-500">Compromissos e tarefas</p>
+           <h1 className="text-2xl font-bold text-slate-800">Agenda</h1>
+           <p className="text-slate-500">Compromissos e Reuniões</p>
         </div>
         <button 
           onClick={() => setIsModalOpen(true)}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors font-medium shadow-sm"
+          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors"
         >
           <Plus size={18} /> Novo Evento
         </button>
       </div>
 
       <div className="space-y-8">
-        {sortedDates.length > 0 ? sortedDates.map(date => (
-          <div key={date} className="relative pl-8 before:absolute before:left-[11px] before:top-2 before:bottom-0 before:w-[2px] before:bg-indigo-100 last:before:hidden">
-            <div className="absolute left-0 top-0 w-6 h-6 rounded-full bg-indigo-100 border-4 border-white flex items-center justify-center">
-              <div className="w-2 h-2 rounded-full bg-indigo-600"></div>
+        {Object.keys(groupedEvents).sort().map(date => (
+          <div key={date}>
+            <div className="flex items-center gap-4 mb-4">
+               <h3 className={`text-lg font-bold capitalize ${date === today ? 'text-indigo-600' : 'text-slate-700'}`}>
+                 {date === today ? 'Hoje, ' : ''}{getDayName(date)}
+               </h3>
+               <div className="h-px flex-1 bg-slate-200"></div>
             </div>
             
-            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
-              {formatDate(date)} 
-              {date === new Date().toISOString().split('T')[0] && <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 rounded-full normal-case">Hoje</span>}
-            </h3>
-
             <div className="space-y-3">
-              {groupedEvents[date].sort((a,b) => a.time.localeCompare(b.time)).map(event => {
-                const client = clients.find(c => c.id === event.clientId);
-                return (
-                  <div key={event.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex gap-4">
-                    <div className="flex flex-col items-center justify-center px-3 border-r border-slate-100 min-w-[80px]">
-                       <span className="text-lg font-bold text-slate-700">{event.time}</span>
-                       <span className="text-[10px] text-slate-400 uppercase font-medium">{event.type}</span>
-                    </div>
-                    <div>
-                       <h4 className="font-bold text-slate-800">{event.title}</h4>
-                       {client && (
-                         <p className="text-sm text-indigo-600 font-medium flex items-center gap-1 mt-1">
-                           <Briefcase size={12}/> {client.company}
-                         </p>
-                       )}
-                       {event.description && (
-                         <p className="text-sm text-slate-500 mt-2 line-clamp-2">{event.description}</p>
-                       )}
-                    </div>
+              {groupedEvents[date].map(event => (
+                <div key={event.id} className="flex gap-4 p-4 bg-white rounded-xl border border-slate-200 shadow-sm hover:border-indigo-200 transition-colors">
+                  <div className="flex flex-col items-center justify-center min-w-[80px] px-4 bg-slate-50 rounded-lg border border-slate-100">
+                    <span className="text-lg font-bold text-slate-800">{event.time}</span>
                   </div>
-                );
-              })}
+                  <div className="flex-1">
+                    <div className="flex justify-between items-start">
+                       <h4 className="font-bold text-slate-800">{event.title}</h4>
+                       <Badge color={event.type === 'Reunião' ? 'blue' : event.type === 'Visita' ? 'green' : 'gray'}>
+                         {event.type}
+                       </Badge>
+                    </div>
+                    {event.clientId && (
+                      <p className="text-sm text-indigo-600 font-medium mt-1">
+                        {clients.find(c => c.id === event.clientId)?.company || 'Cliente não encontrado'}
+                      </p>
+                    )}
+                    {event.description && <p className="text-sm text-slate-500 mt-2">{event.description}</p>}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-        )) : (
-          <div className="text-center py-12 bg-white rounded-xl border border-dashed border-slate-200">
-            <Calendar size={48} className="mx-auto text-slate-300 mb-4" />
-            <p className="text-slate-500">Nenhum evento agendado.</p>
+        ))}
+
+        {events.length === 0 && (
+          <div className="text-center py-20 text-slate-400">
+            <Calendar size={48} className="mx-auto mb-4 opacity-50" />
+            <p>Nenhum evento agendado.</p>
           </div>
         )}
       </div>
@@ -1533,7 +1342,10 @@ const AgendaView = ({
       <NewEventModal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
-        onSave={handleAddEvent}
+        onSave={(evt) => {
+          setEvents([...events, evt]);
+          setIsModalOpen(false);
+        }}
         clients={clients}
       />
     </div>
@@ -1558,12 +1370,16 @@ const FinanceView = ({
     amount: string;
     dueDate: string;
     clientId: string;
+    recurrence: RecurrenceType;
+    installmentsTotal: string;
   }>({
     type: 'Receivable',
     description: '',
     amount: '',
     dueDate: new Date().toISOString().split('T')[0],
     clientId: '',
+    recurrence: 'One-time',
+    installmentsTotal: ''
   });
 
   const toggleStatus = async (id: string) => {
@@ -1590,6 +1406,8 @@ const FinanceView = ({
       amount: '',
       dueDate: new Date().toISOString().split('T')[0],
       clientId: '',
+      recurrence: 'One-time',
+      installmentsTotal: ''
     });
     setIsModalOpen(true);
   };
@@ -1602,6 +1420,8 @@ const FinanceView = ({
       amount: t.amount.toString(),
       dueDate: t.dueDate,
       clientId: t.clientId || '',
+      recurrence: t.recurrence,
+      installmentsTotal: t.installmentsTotal ? t.installmentsTotal.toString() : ''
     });
     setIsModalOpen(true);
   };
@@ -1619,15 +1439,19 @@ const FinanceView = ({
   const handleSaveTransaction = async () => {
     if (!newTransaction.description || !newTransaction.amount || !newTransaction.dueDate) return;
 
+    const payload = {
+      type: newTransaction.type,
+      description: newTransaction.description,
+      amount: parseFloat(newTransaction.amount),
+      due_date: newTransaction.dueDate,
+      client_id: newTransaction.type === 'Receivable' ? (newTransaction.clientId || null) : null,
+      recurrence: newTransaction.recurrence,
+      installments_total: newTransaction.recurrence === 'Installments' && newTransaction.installmentsTotal ? parseInt(newTransaction.installmentsTotal) : null
+    };
+
     if (editingId) {
       // Update existing
-      const { error } = await supabase.from('transactions').update({
-        type: newTransaction.type,
-        description: newTransaction.description,
-        amount: parseFloat(newTransaction.amount),
-        due_date: newTransaction.dueDate,
-        client_id: newTransaction.type === 'Receivable' ? (newTransaction.clientId || null) : null
-      }).eq('id', editingId);
+      const { error } = await supabase.from('transactions').update(payload).eq('id', editingId);
 
       if (error) {
         console.error(error);
@@ -1640,18 +1464,16 @@ const FinanceView = ({
         description: newTransaction.description,
         amount: parseFloat(newTransaction.amount),
         dueDate: newTransaction.dueDate,
-        clientId: newTransaction.type === 'Receivable' ? (newTransaction.clientId || undefined) : undefined
+        clientId: newTransaction.type === 'Receivable' ? (newTransaction.clientId || undefined) : undefined,
+        recurrence: newTransaction.recurrence,
+        installmentsTotal: payload.installments_total || undefined
       } : t));
 
     } else {
       // Create new
       const { data, error } = await supabase.from('transactions').insert([{
-        type: newTransaction.type,
-        description: newTransaction.description,
-        amount: parseFloat(newTransaction.amount),
-        due_date: newTransaction.dueDate,
+        ...payload,
         status: 'Pending',
-        client_id: newTransaction.type === 'Receivable' ? (newTransaction.clientId || null) : null
       }]).select();
 
       if (error) {
@@ -1737,7 +1559,19 @@ const FinanceView = ({
                       <tr key={t.id} className="hover:bg-slate-50 transition-colors group">
                         <td className="px-6 py-4">
                           <p className="font-medium text-slate-800">{client ? client.company : t.description}</p>
-                          {client && <p className="text-xs text-slate-500">{t.description}</p>}
+                          <div className="flex items-center gap-2">
+                             {client && <span className="text-xs text-slate-500">{t.description}</span>}
+                             {t.recurrence === 'Fixed' && (
+                               <span className="flex items-center gap-0.5 text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200" title="Recorrência Fixa">
+                                 <Calendar size={10} /> Fixa
+                               </span>
+                             )}
+                             {t.recurrence === 'Installments' && t.installmentsTotal && (
+                               <span className="flex items-center gap-0.5 text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded border border-indigo-100" title={`Parcelado em ${t.installmentsTotal}x`}>
+                                 <Clock size={10} /> {t.installmentsTotal}x
+                               </span>
+                             )}
+                          </div>
                         </td>
                         <td className="px-6 py-4">
                           <div className={`flex items-center gap-2 ${isOverdue ? 'text-red-600 font-medium' : 'text-slate-600'}`}>
@@ -1887,26 +1721,53 @@ const FinanceView = ({
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Valor (R$)</label>
-                <input
-                  type="number"
-                  value={newTransaction.amount}
-                  onChange={(e) => setNewTransaction({ ...newTransaction, amount: e.target.value })}
-                  placeholder="0,00"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                 <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Valor (R$)</label>
+                    <input
+                      type="number"
+                      value={newTransaction.amount}
+                      onChange={(e) => setNewTransaction({ ...newTransaction, amount: e.target.value })}
+                      placeholder="0,00"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                    />
+                 </div>
+                 <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Vencimento</label>
+                    <input
+                      type="date"
+                      value={newTransaction.dueDate}
+                      onChange={(e) => setNewTransaction({ ...newTransaction, dueDate: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                    />
+                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Data de Vencimento</label>
-                <input
-                  type="date"
-                  value={newTransaction.dueDate}
-                  onChange={(e) => setNewTransaction({ ...newTransaction, dueDate: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-                />
+                <label className="block text-sm font-medium text-slate-700 mb-1">Periodicidade / Tipo</label>
+                <select
+                  value={newTransaction.recurrence}
+                  onChange={(e) => setNewTransaction({ ...newTransaction, recurrence: e.target.value as RecurrenceType })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-white"
+                >
+                  <option value="One-time">Pontual (Uma única vez)</option>
+                  <option value="Fixed">Fixa (Mensal Recorrente)</option>
+                  <option value="Installments">Parcelada / Temporária</option>
+                </select>
               </div>
+
+              {newTransaction.recurrence === 'Installments' && (
+                <div className="animate-in fade-in slide-in-from-top-2">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Quantidade de Meses/Parcelas</label>
+                  <input
+                    type="number"
+                    value={newTransaction.installmentsTotal}
+                    onChange={(e) => setNewTransaction({ ...newTransaction, installmentsTotal: e.target.value })}
+                    placeholder="Ex: 6"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                  />
+                </div>
+              )}
 
               {newTransaction.type === 'Receivable' && (
                 <div>
