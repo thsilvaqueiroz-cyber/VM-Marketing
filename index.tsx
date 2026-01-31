@@ -39,14 +39,15 @@ import {
   StickyNote,
   Loader2,
   Settings,
-  Menu
+  Menu,
+  Pencil
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO SUPABASE ---
 // 1. COLOQUE SUAS CHAVES AQUI SE DESEJAR HARDCODED
 // 2. OU DEIXE VAZIO E USE A TELA DE CONFIGURAÇÃO DO APP
-const SUPABASE_URL = process.env.SUPABASE_URL || ""; 
-const SUPABASE_KEY = process.env.SUPABASE_KEY || "";
+const SUPABASE_URL = process.env.SUPABASE_URL || "https://kdohrbadfrfgnrzuxtxw.supabase.co"; 
+const SUPABASE_KEY = process.env.SUPABASE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtkb2hyYmFkZnJmZ25yenV4dHh3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk2MDI0MTQsImV4cCI6MjA4NTE3ODQxNH0.7PSXcFkM-FvFKEeN8XHmEnmu3VzIl1YuQR5xqzaNiJM";
 
 // --- Inicialização Segura do Cliente ---
 let supabase: any = null;
@@ -1550,6 +1551,7 @@ const FinanceView = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'receivable' | 'payable'>('receivable');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [newTransaction, setNewTransaction] = useState<{
     type: 'Receivable' | 'Payable';
     description: string;
@@ -1580,34 +1582,89 @@ const FinanceView = ({
     await supabase.from('transactions').update({ status: newStatus }).eq('id', id);
   };
 
+  const openNewTransactionModal = () => {
+    setEditingId(null);
+    setNewTransaction({
+      type: 'Receivable',
+      description: '',
+      amount: '',
+      dueDate: new Date().toISOString().split('T')[0],
+      clientId: '',
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleEditTransaction = (t: Transaction) => {
+    setEditingId(t.id);
+    setNewTransaction({
+      type: t.type,
+      description: t.description,
+      amount: t.amount.toString(),
+      dueDate: t.dueDate,
+      clientId: t.clientId || '',
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteTransaction = async (id: string) => {
+    if (!confirm('Tem certeza que deseja excluir esta transação?')) return;
+
+    // Optimistic
+    setTransactions(prev => prev.filter(t => t.id !== id));
+
+    // DB
+    await supabase.from('transactions').delete().eq('id', id);
+  };
+
   const handleSaveTransaction = async () => {
     if (!newTransaction.description || !newTransaction.amount || !newTransaction.dueDate) return;
 
-    const { data, error } = await supabase.from('transactions').insert([{
-      type: newTransaction.type,
-      description: newTransaction.description,
-      amount: parseFloat(newTransaction.amount),
-      due_date: newTransaction.dueDate,
-      status: 'Pending',
-      client_id: newTransaction.type === 'Receivable' ? (newTransaction.clientId || null) : null
-    }]).select();
+    if (editingId) {
+      // Update existing
+      const { error } = await supabase.from('transactions').update({
+        type: newTransaction.type,
+        description: newTransaction.description,
+        amount: parseFloat(newTransaction.amount),
+        due_date: newTransaction.dueDate,
+        client_id: newTransaction.type === 'Receivable' ? (newTransaction.clientId || null) : null
+      }).eq('id', editingId);
 
-    if (error) {
-      console.error(error);
-      return;
-    }
+      if (error) {
+        console.error(error);
+        return;
+      }
 
-    if (data) {
-      setTransactions([...transactions, mapTransaction(data[0])]);
-      setIsModalOpen(false);
-      setNewTransaction({
-        type: 'Receivable',
-        description: '',
-        amount: '',
-        dueDate: new Date().toISOString().split('T')[0],
-        clientId: '',
-      });
+      setTransactions(prev => prev.map(t => t.id === editingId ? {
+        ...t,
+        type: newTransaction.type,
+        description: newTransaction.description,
+        amount: parseFloat(newTransaction.amount),
+        dueDate: newTransaction.dueDate,
+        clientId: newTransaction.type === 'Receivable' ? (newTransaction.clientId || undefined) : undefined
+      } : t));
+
+    } else {
+      // Create new
+      const { data, error } = await supabase.from('transactions').insert([{
+        type: newTransaction.type,
+        description: newTransaction.description,
+        amount: parseFloat(newTransaction.amount),
+        due_date: newTransaction.dueDate,
+        status: 'Pending',
+        client_id: newTransaction.type === 'Receivable' ? (newTransaction.clientId || null) : null
+      }]).select();
+
+      if (error) {
+        console.error(error);
+        return;
+      }
+
+      if (data) {
+        setTransactions([...transactions, mapTransaction(data[0])]);
+      }
     }
+    
+    setIsModalOpen(false);
   };
 
   const filteredTransactions = transactions
@@ -1634,7 +1691,7 @@ const FinanceView = ({
           <p className="text-slate-500">Fluxo de Caixa e Previsões</p>
         </div>
         <button 
-          onClick={() => setIsModalOpen(true)}
+          onClick={openNewTransactionModal}
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors font-medium shadow-sm"
         >
           <Plus size={18} /> Nova Transação
@@ -1705,16 +1762,32 @@ const FinanceView = ({
                            )}
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <button 
-                            onClick={() => toggleStatus(t.id)}
-                            className={`text-xs px-3 py-1.5 rounded border transition-colors ${
-                              t.status === 'Paid' 
-                                ? 'border-slate-200 text-slate-500 hover:bg-slate-50' 
-                                : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 font-medium'
-                            }`}
-                          >
-                            {t.status === 'Paid' ? 'Desfazer' : 'Dar Baixa'}
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            <button 
+                              onClick={() => toggleStatus(t.id)}
+                              className={`text-xs px-3 py-1.5 rounded border transition-colors ${
+                                t.status === 'Paid' 
+                                  ? 'border-slate-200 text-slate-500 hover:bg-slate-50' 
+                                  : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 font-medium'
+                              }`}
+                            >
+                              {t.status === 'Paid' ? 'Desfazer' : 'Dar Baixa'}
+                            </button>
+                            <button 
+                              onClick={() => handleEditTransaction(t)}
+                              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                              title="Editar"
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteTransaction(t.id)}
+                              className="p-1.5 text-red-500 hover:bg-red-50 rounded transition-colors"
+                              title="Excluir"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1732,19 +1805,25 @@ const FinanceView = ({
 
         <div className="space-y-6">
           <div className="bg-slate-800 rounded-xl shadow-lg p-6 text-white">
-            <h3 className="text-lg font-semibold mb-2">Previsão de Entrada</h3>
-            <p className="text-slate-300 text-sm mb-6">Valores a entrar nos próximos dias.</p>
+            <h3 className="text-lg font-semibold mb-2">
+              {activeTab === 'receivable' ? 'Previsão de Entrada' : 'Previsão de Saída'}
+            </h3>
+            <p className="text-slate-300 text-sm mb-6">
+              {activeTab === 'receivable' ? 'Valores a entrar nos próximos dias.' : 'Valores a pagar nos próximos dias.'}
+            </p>
             
             <div className="space-y-4">
               {forecast.length > 0 ? forecast.map(([date, amount]) => (
                 <div key={date} className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10">
                   <div className="flex items-center gap-3">
-                    <div className="bg-indigo-500/20 p-2 rounded text-indigo-300">
+                    <div className={`p-2 rounded ${activeTab === 'receivable' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-red-500/20 text-red-300'}`}>
                       <Calendar size={16} />
                     </div>
                     <span className="text-sm font-medium">{formatDate(date)}</span>
                   </div>
-                  <span className="font-bold text-emerald-400">{formatCurrency(amount)}</span>
+                  <span className={`font-bold ${activeTab === 'receivable' ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {formatCurrency(amount)}
+                  </span>
                 </div>
               )) : (
                 <p className="text-sm text-slate-500 italic">Sem previsões pendentes.</p>
@@ -1765,7 +1844,7 @@ const FinanceView = ({
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in">
             <div className="flex justify-between items-center p-6 border-b border-slate-100">
-              <h2 className="text-xl font-bold text-slate-800">Nova Transação</h2>
+              <h2 className="text-xl font-bold text-slate-800">{editingId ? 'Editar Transação' : 'Nova Transação'}</h2>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
                 <X size={20} />
               </button>
@@ -1857,7 +1936,7 @@ const FinanceView = ({
                 onClick={handleSaveTransaction}
                 className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-sm"
               >
-                Salvar Transação
+                {editingId ? 'Atualizar Transação' : 'Salvar Transação'}
               </button>
             </div>
           </div>
